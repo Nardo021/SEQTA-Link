@@ -1,0 +1,10 @@
+# Example Cloudflare Tunnel configuration
+# Install cloudflared and place this at /etc/cloudflared/config.yml
+
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /etc/cloudflared/YOUR_TUNNEL_ID.json
+
+ingress:
+  - hostname: timetable.leoze.top
+    service: http://127.0.0.1:3210
+  - service: http_status:404

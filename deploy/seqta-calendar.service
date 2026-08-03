@@ -1,0 +1,25 @@
+[Unit]
+Description=SEQTA Calendar Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seqta-calendar
+Group=seqta-calendar
+WorkingDirectory=/opt/seqta-calendar/current
+EnvironmentFile=/etc/seqta-calendar.env
+ExecStart=/usr/bin/node dist/main.js
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/seqta-calendar
+CapabilityBoundingSet=
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

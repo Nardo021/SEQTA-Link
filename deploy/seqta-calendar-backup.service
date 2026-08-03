@@ -1,0 +1,11 @@
+[Unit]
+Description=SEQTA Calendar SQLite Backup
+After=seqta-calendar.service
+
+[Service]
+Type=oneshot
+User=seqta-calendar
+Group=seqta-calendar
+WorkingDirectory=/opt/seqta-calendar/current
+EnvironmentFile=/etc/seqta-calendar.env
+ExecStart=/usr/bin/npm run cli -- backup --output /var/backups/seqta-calendar

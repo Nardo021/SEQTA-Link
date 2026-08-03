@@ -1,0 +1,37 @@
+{
+  "name": "seqta-calendar",
+  "version": "1.0.0",
+  "description": "Self-hosted SEQTA timetable sync backend with iCalendar feed",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "cli": "tsx src/cli/index.ts",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "build:userscript": "node Script/build.mjs",
+    "lint": "eslint src test"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "@fastify/rate-limit": "^10.2.2",
+    "better-sqlite3": "^13.0.2",
+    "dotenv": "^16.5.0",
+    "fastify": "^5.3.3",
+    "fastify-plugin": "^5.0.1",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.27.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.21",
+    "eslint": "^9.27.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.1"
+  }
+}

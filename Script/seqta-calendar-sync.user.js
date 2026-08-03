@@ -1,0 +1,896 @@
+// ==UserScript==
+// @name         SEQTA Calendar Sync
+// @namespace    https://timetable.leoze.top
+// @version      1.0.0
+// @description  Sync SEQTA Learn timetable to seqta-calendar backend (Apple Calendar feed)
+// @author       Leo
+// @match        https://learn.*.edu.au/*
+// @match        https://*.seqta.com.au/*
+// @match        https://learn.*/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=seqta.com.au
+// @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @connect      timetable.leoze.top
+// @connect      localhost
+// @connect      127.0.0.1
+// @run-at       document-idle
+// ==/UserScript==
+
+(function seqtaCalendarSync() {
+  'use strict';
+
+  /** @typedef {{ date: string; from: string; until: string; description: string; staff?: string; room?: string; code?: string; type?: string; period?: string; notes?: string; calendarid?: string | number; ci?: number }} SeqtaLesson */
+
+  const STORAGE = {
+    backendUrl: 'seqtaCal.backendUrl',
+    uploadToken: 'seqtaCal.uploadToken',
+    calendarUrl: 'seqtaCal.calendarUrl',
+    weeksAhead: 'seqtaCal.weeksAhead',
+    studentRefOverride: 'seqtaCal.studentRefOverride',
+  };
+
+  const DEFAULTS = {
+    backendUrl: 'https://timetable.leoze.top',
+    weeksAhead: 12,
+    timezone: 'Australia/Sydney',
+    maxWeeks: 17,
+    maxLessons: 2000,
+  };
+
+  const SKIP_LESSON_TYPES = new Set(['note', 'holiday', 'assembly-note']);
+
+  /** @param {string} key */
+  function getSetting(key) {
+    return GM_getValue(key);
+  }
+
+  /** @param {string} key @param {unknown} value */
+  function setSetting(key, value) {
+    GM_setValue(key, value);
+  }
+
+  function loadConfig() {
+    return {
+      backendUrl: String(getSetting(STORAGE.backendUrl) || DEFAULTS.backendUrl).replace(/\/+$/, ''),
+      uploadToken: String(getSetting(STORAGE.uploadToken) || '').trim(),
+      calendarUrl: String(getSetting(STORAGE.calendarUrl) || '').trim(),
+      weeksAhead: clampWeeks(Number(getSetting(STORAGE.weeksAhead)) || DEFAULTS.weeksAhead),
+      studentRefOverride: String(getSetting(STORAGE.studentRefOverride) || '').trim(),
+    };
+  }
+
+  /** @param {number} value */
+  function clampWeeks(value) {
+    if (!Number.isFinite(value) || value < 1) return DEFAULTS.weeksAhead;
+    return Math.min(value, DEFAULTS.maxWeeks);
+  }
+
+  /** @param {Date} d */
+  function toISODate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  /** Monday–Sunday range containing `date`. */
+  /** @param {Date} date */
+  function weekRangeContaining(date) {
+    const local = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dow = local.getDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    local.setDate(local.getDate() + diff);
+    const monday = local;
+    const sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() + 6);
+    return { from: toISODate(monday), until: toISODate(sunday) };
+  }
+
+  /** @param {string} iso @returns {Date} */
+  function parseLocalDate(iso) {
+    return new Date(`${iso}T12:00:00`);
+  }
+
+  /** @param {number} weeksAhead */
+  function buildWeekRanges(weeksAhead) {
+    const ranges = [];
+    let cursor = weekRangeContaining(new Date()).from;
+    for (let i = 0; i < weeksAhead; i += 1) {
+      const start = parseLocalDate(cursor);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      ranges.push({ from: toISODate(start), until: toISODate(end) });
+      const next = new Date(start);
+      next.setDate(next.getDate() + 7);
+      cursor = toISODate(next);
+    }
+    return ranges;
+  }
+
+  /** @param {Date} [date] */
+  function getSydneyOffset(date = new Date()) {
+    const formatter = new Intl.DateTimeFormat('en-AU', {
+      timeZone: DEFAULTS.timezone,
+      timeZoneName: 'shortOffset',
+    });
+    const part = formatter.formatToParts(date).find((p) => p.type === 'timeZoneName');
+    const raw = part?.value || 'GMT+10';
+    const match = raw.match(/GMT([+-]\d{1,2})(?::?(\d{2}))?/i);
+    if (!match) return '+10:00';
+    const sign = match[1].startsWith('-') ? '-' : '+';
+    const hours = String(Math.abs(Number.parseInt(match[1], 10))).padStart(2, '0');
+    const mins = match[2] || '00';
+    return `${sign}${hours}:${mins}`;
+  }
+
+  /** @param {Date} [date] */
+  function formatGeneratedAt(date = new Date()) {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: DEFAULTS.timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = Object.fromEntries(
+      formatter.formatToParts(date).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]),
+    );
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${getSydneyOffset(date)}`;
+  }
+
+  /** @param {string} value */
+  function normalizeTime(value) {
+    const trimmed = String(value || '').trim();
+    const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match) return null;
+    return `${match[1].padStart(2, '0')}:${match[2]}:${match[3] || '00'}`;
+  }
+
+  /** @param {string | undefined} value */
+  function truncate(value, max) {
+    if (!value) return value;
+    return value.length <= max ? value : value.slice(0, max);
+  }
+
+  /** @param {SeqtaLesson} lesson */
+  function normalizePeriodKey(lesson) {
+    if (lesson.period) {
+      const slug = lesson.period
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      if (slug) {
+        return slug.startsWith('period') ? slug : `period-${slug}`;
+      }
+    }
+    const from = normalizeTime(lesson.from);
+    if (from) {
+      return `slot-${from.slice(0, 5).replace(':', '')}`;
+    }
+    return 'unknown-period';
+  }
+
+  /** @param {string | undefined} code */
+  function normalizeCourseCode(code) {
+    if (!code) return '';
+    return code.trim().toUpperCase().replace(/\s+/g, '');
+  }
+
+  /** @param {string | undefined} title */
+  function normalizeTitle(title) {
+    return String(title || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80);
+  }
+
+  /** @param {string | number | undefined} calendarid */
+  function stableOccurrenceId(calendarid, ci) {
+    if (calendarid != null && String(calendarid).length > 0) {
+      return String(calendarid).replace(/^event:/i, '');
+    }
+    if (ci != null && Number.isFinite(Number(ci))) {
+      return String(ci);
+    }
+    return '';
+  }
+
+  function buildSourceKey(lesson) {
+    const date = lesson.date;
+    const periodKey = normalizePeriodKey(lesson);
+    const occurrenceId = stableOccurrenceId(lesson.calendarid, lesson.ci);
+    if (occurrenceId) {
+      return `${date}|${periodKey}|${occurrenceId}`;
+    }
+    const courseCode = normalizeCourseCode(lesson.code);
+    if (courseCode) {
+      return `${date}|${periodKey}|${courseCode}`;
+    }
+    return `${date}|${periodKey}|${normalizeTitle(lesson.description)}`;
+  }
+
+  /** @param {SeqtaLesson} lesson */
+  function shouldIncludeLesson(lesson) {
+    if (!lesson.date || !lesson.from || !lesson.until) return false;
+    if (lesson.type && SKIP_LESSON_TYPES.has(lesson.type.toLowerCase())) return false;
+    const title = (lesson.description || lesson.code || '').trim();
+    return title.length > 0;
+  }
+
+  /** @param {SeqtaLesson} lesson */
+  function mapLessonToPayload(lesson) {
+    const start = normalizeTime(lesson.from);
+    const end = normalizeTime(lesson.until);
+    if (!start || !end) return null;
+
+    return {
+      sourceKey: truncate(buildSourceKey(lesson), 300),
+      date: lesson.date,
+      periodKey: normalizePeriodKey(lesson),
+      periodLabel: truncate(lesson.period || normalizePeriodKey(lesson), 100),
+      courseCode: normalizeCourseCode(lesson.code) || undefined,
+      title: truncate((lesson.description || lesson.code || 'Class').trim(), 200),
+      teacher: truncate(lesson.staff?.trim() || undefined, 200),
+      room: truncate(lesson.room?.trim() || undefined, 100),
+      start,
+      end,
+      type: 'class',
+    };
+  }
+
+  /** @param {SeqtaLesson[]} lessons */
+  function dedupeLessons(lessons) {
+    const seen = new Set();
+    const out = [];
+    for (const lesson of lessons) {
+      if (!shouldIncludeLesson(lesson)) continue;
+      const mapped = mapLessonToPayload(lesson);
+      if (!mapped || seen.has(mapped.sourceKey)) continue;
+      seen.add(mapped.sourceKey);
+      out.push(mapped);
+    }
+    return out;
+  }
+
+  /** @param {string} path @param {Record<string, unknown>} body */
+  async function postSeqtaJson(path, body) {
+    const res = await fetch(`${location.origin}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Requested-With': 'XMLHttpRequest',
+        Accept: 'text/javascript, text/html, application/xml, text/xml, */*',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(`SEQTA request failed (${res.status}) for ${path}`);
+    }
+    return res.json();
+  }
+
+  function isParentContext() {
+    return (
+      location.pathname.includes('/parent/') ||
+      location.hash.includes('/parent/') ||
+      document.body.classList.contains('parent')
+    );
+  }
+
+  /** @type {{ id?: number; student?: number; type?: string } | null} */
+  let cachedLogin = null;
+
+  async function resolveLoginPayload() {
+    if (cachedLogin) return cachedLogin;
+    if (isParentContext()) return null;
+    try {
+      const json = await postSeqtaJson('/seqta/student/login', {
+        mode: 'normal',
+        query: null,
+        redirect_url: location.href,
+      });
+      cachedLogin = json?.payload || null;
+      return cachedLogin;
+    } catch {
+      return null;
+    }
+  }
+
+  async function resolveStudentId() {
+    const config = loadConfig();
+    if (config.studentRefOverride) {
+      const parsed = Number.parseInt(config.studentRefOverride, 10);
+      return Number.isFinite(parsed) ? parsed : config.studentRefOverride;
+    }
+    const payload = await resolveLoginPayload();
+    const id = payload?.id ?? payload?.student;
+    return typeof id === 'number' && Number.isFinite(id) ? id : undefined;
+  }
+
+  async function resolveStudentRef() {
+    const config = loadConfig();
+    if (config.studentRefOverride) return config.studentRefOverride;
+
+    if (isParentContext()) {
+      const listJson = await postSeqtaJson('/seqta/parent/load/timetable', { list: true });
+      const firstChild = Array.isArray(listJson?.payload) ? listJson.payload[0] : undefined;
+      if (firstChild?.id != null) return String(firstChild.id);
+    }
+
+    const id = await resolveStudentId();
+    if (id == null) throw new Error('Could not determine student ID. Set it manually in settings.');
+    return String(id);
+  }
+
+  /** @param {{ from: string; until: string }} range @returns {Promise<SeqtaLesson[]>} */
+  async function fetchTimetableWeek(range) {
+    const { from, until } = range;
+
+    if (isParentContext()) {
+      const listJson = await postSeqtaJson('/seqta/parent/load/timetable', { list: true });
+      const firstChild = Array.isArray(listJson?.payload) ? listJson.payload[0] : undefined;
+      const studentId = firstChild?.id;
+      if (studentId == null) {
+        throw new Error('No student found on this parent account.');
+      }
+      const data = await postSeqtaJson('/seqta/parent/load/timetable', {
+        from,
+        until,
+        student: studentId,
+      });
+      return Array.isArray(data?.payload?.items) ? data.payload.items : [];
+    }
+
+    const studentId = await resolveStudentId();
+    /** @type {Record<string, unknown>} */
+    const body = { from, until };
+    if (studentId != null) body.student = studentId;
+
+    const data = await postSeqtaJson('/seqta/student/load/timetable?', body);
+    return Array.isArray(data?.payload?.items) ? data.payload.items : [];
+  }
+
+  /** @param {string} text */
+  function parseTimeRange(text) {
+    const cleaned = text.replace(/\u2013|\u2014|–|—/g, '-');
+    const parts = cleaned.split('-').map((p) => p.trim());
+    if (parts.length < 2) return null;
+    const from = normalizeTime(parts[0]);
+    const until = normalizeTime(parts[1]);
+    if (!from || !until) return null;
+    return { from, until };
+  }
+
+  /** @returns {SeqtaLesson[]} */
+  function extractLessonsFromDom() {
+    /** @type {SeqtaLesson[]} */
+    const lessons = [];
+    const root = document.querySelector('.timetablepage, .timetable');
+    if (!root) return lessons;
+
+    const dayNodes = root.querySelectorAll('.day');
+    if (dayNodes.length > 0) {
+      dayNodes.forEach((dayEl) => {
+        const date =
+          dayEl.getAttribute('data-date') ||
+          dayEl.querySelector('[data-date]')?.getAttribute('data-date') ||
+          dayEl.querySelector('.date')?.textContent?.trim() ||
+          '';
+        const isoDate = normalizeDomDate(date);
+        if (!isoDate) return;
+
+        dayEl.querySelectorAll('.entry.class, .entry').forEach((entry) => {
+          const lesson = parseDomEntry(entry, isoDate);
+          if (lesson) lessons.push(lesson);
+        });
+      });
+      return lessons;
+    }
+
+    document.querySelectorAll('.timetablepage .entry.class, .timetable .entry.class').forEach((entry) => {
+      const dateAttr = entry.closest('.day')?.getAttribute('data-date');
+      const lesson = parseDomEntry(entry, dateAttr ? normalizeDomDate(dateAttr) : '');
+      if (lesson) lessons.push(lesson);
+    });
+
+    return lessons;
+  }
+
+  /** @param {string} raw */
+  function normalizeDomDate(raw) {
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) return toISODate(new Date(parsed));
+    return '';
+  }
+
+  /** @param {Element} entry @param {string} date */
+  function parseDomEntry(entry, date) {
+    if (!date) return null;
+
+    const title =
+      entry.querySelector('.title, .subject, .description')?.textContent?.trim() ||
+      entry.getAttribute('title') ||
+      '';
+    const staff = entry.querySelector('.staff, .teacher')?.textContent?.trim() || '';
+    const room = entry.querySelector('.room, .location')?.textContent?.trim() || '';
+    const code = entry.querySelector('.code')?.textContent?.trim() || '';
+    const period = entry.querySelector('.period')?.textContent?.trim() || '';
+
+    const timeEl = entry.querySelector('.times, .time');
+    const timeText = timeEl?.textContent?.trim() || '';
+    const range = parseTimeRange(timeText);
+    if (!range && !title) return null;
+
+    const calendarid =
+      entry.getAttribute('data-id') ||
+      entry.getAttribute('data-calendarid') ||
+      entry.getAttribute('data-ci') ||
+      undefined;
+    const ciRaw = entry.getAttribute('data-ci');
+    const ci = ciRaw ? Number.parseInt(ciRaw, 10) : undefined;
+
+    return {
+      date,
+      from: range?.from || '00:00:00',
+      until: range?.until || '00:00:00',
+      description: title || code || 'Class',
+      staff: staff || undefined,
+      room: room || undefined,
+      code: code || undefined,
+      period: period || undefined,
+      type: entry.classList.contains('assessment') ? 'assessment' : 'class',
+      calendarid: calendarid || undefined,
+      ci: Number.isFinite(ci) ? ci : undefined,
+    };
+  }
+
+  /**
+   * @param {object} options
+   * @param {string} options.method
+   * @param {string} options.url
+   * @param {Record<string, string>} [options.headers]
+   * @param {string} [options.data]
+   * @returns {Promise<{ status: number; responseText: string; responseHeaders: string }>}
+   */
+  function gmRequest(options) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: options.method,
+        url: options.url,
+        headers: options.headers,
+        data: options.data,
+        onload(response) {
+          resolve({
+            status: response.status,
+            responseText: response.responseText,
+            responseHeaders: response.responseHeaders,
+          });
+        },
+        onerror(error) {
+          reject(new Error(error?.error || 'Network request failed'));
+        },
+        ontimeout() {
+          reject(new Error('Request timed out'));
+        },
+        timeout: 120000,
+      });
+    });
+  }
+
+  /** @param {string} body @param {string} idempotencyKey @param {boolean} [allowEmptySnapshot] */
+  async function postSyncPayload(body, idempotencyKey, allowEmptySnapshot = false) {
+    const config = loadConfig();
+    if (!config.uploadToken) {
+      throw new Error('Upload token is not configured. Open settings and paste your scu_… token.');
+    }
+    if (!config.uploadToken.startsWith('scu_')) {
+      throw new Error('Upload token should start with scu_. Check your feed provisioning output.');
+    }
+
+    /** @type {Record<string, unknown>} */
+    const payload = JSON.parse(body);
+    if (allowEmptySnapshot) {
+      payload.allowEmptySnapshot = true;
+    }
+
+    const url = `${config.backendUrl}/api/v1/sync`;
+    const response = await gmRequest({
+      method: 'POST',
+      url,
+      headers: {
+        Authorization: `Bearer ${config.uploadToken}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      },
+      data: JSON.stringify(payload),
+    });
+
+    let parsed = null;
+    try {
+      parsed = response.responseText ? JSON.parse(response.responseText) : null;
+    } catch {
+      parsed = null;
+    }
+
+    if (response.status >= 200 && response.status < 300) {
+      return parsed;
+    }
+
+    const code = parsed?.error?.code || `HTTP_${response.status}`;
+    const message = parsed?.error?.message || response.responseText || `Sync failed (${response.status})`;
+    const err = new Error(message);
+    err.code = code;
+    err.status = response.status;
+    err.response = parsed;
+    throw err;
+  }
+
+  /** @param {{ lessons?: unknown[]; coverage?: CoverageWeek[] }} payload */
+  function needsEmptySnapshotConfirmation(payload) {
+    if ((payload.lessons?.length ?? 0) > 0) return false;
+    let completeDays = 0;
+    for (const week of payload.coverage ?? []) {
+      if (!week.complete) continue;
+      const from = parseLocalDate(week.from);
+      const until = parseLocalDate(week.until);
+      completeDays += Math.round((until.getTime() - from.getTime()) / 86400000) + 1;
+    }
+    return completeDays > 7;
+  }
+
+  /** @typedef {{ from: string; until: string; complete: boolean }} CoverageWeek */
+
+  /**
+   * @param {(message: string) => void} onProgress
+   * @returns {Promise<{ payload: object; stats: { weeksOk: number; weeksFailed: number; lessonCount: number } }>}
+   */
+  async function buildSyncPayload(onProgress) {
+    const config = loadConfig();
+    const weekRanges = buildWeekRanges(config.weeksAhead);
+    /** @type {CoverageWeek[]} */
+    const coverage = [];
+    /** @type {SeqtaLesson[]} */
+    const allLessons = [];
+    let weeksOk = 0;
+    let weeksFailed = 0;
+    let apiAvailable = true;
+
+    for (let i = 0; i < weekRanges.length; i += 1) {
+      const range = weekRanges[i];
+      onProgress(`Fetching week ${i + 1}/${weekRanges.length} (${range.from} → ${range.until})…`);
+      try {
+        const items = await fetchTimetableWeek(range);
+        allLessons.push(...items);
+        coverage.push({ from: range.from, until: range.until, complete: true });
+        weeksOk += 1;
+      } catch (error) {
+        apiAvailable = false;
+        coverage.push({ from: range.from, until: range.until, complete: false });
+        weeksFailed += 1;
+        console.warn('[seqta-calendar-sync] Week fetch failed:', range, error);
+      }
+    }
+
+    if (!apiAvailable && allLessons.length === 0) {
+      onProgress('SEQTA API unavailable — trying DOM extraction for the visible week…');
+      const domLessons = extractLessonsFromDom();
+      if (domLessons.length > 0) {
+        const visible = weekRangeContaining(new Date());
+        allLessons.push(...domLessons);
+        coverage.length = 0;
+        coverage.push({ from: visible.from, until: visible.until, complete: true });
+        weeksOk = 1;
+        weeksFailed = weekRanges.length - 1;
+      }
+    }
+
+    const lessons = dedupeLessons(allLessons).slice(0, DEFAULTS.maxLessons);
+    const schoolHost = location.hostname;
+    const studentRef = await resolveStudentRef();
+
+    const payload = {
+      schemaVersion: 1,
+      schoolHost,
+      studentRef,
+      timezone: DEFAULTS.timezone,
+      generatedAt: formatGeneratedAt(),
+      coverage,
+      lessons,
+    };
+
+    return {
+      payload,
+      stats: {
+        weeksOk,
+        weeksFailed,
+        lessonCount: lessons.length,
+      },
+    };
+  }
+
+  /** @param {(message: string) => void} onProgress */
+  async function runSync(onProgress) {
+    const idempotencyKey = crypto.randomUUID();
+    onProgress('Building timetable snapshot…');
+
+    const { payload, stats } = await buildSyncPayload(onProgress);
+    const body = JSON.stringify(payload);
+
+    onProgress(`Uploading ${stats.lessonCount} lessons (${stats.weeksOk} complete weeks, ${stats.weeksFailed} incomplete)…`);
+
+    const allowEmptySnapshot = needsEmptySnapshotConfirmation(payload);
+    if (allowEmptySnapshot) {
+      onProgress('Empty snapshot over 7+ complete days — sending allowEmptySnapshot…');
+    }
+
+    const result = await postSyncPayload(body, idempotencyKey, allowEmptySnapshot);
+    return {
+      result,
+      stats,
+      idempotencyKey,
+      emptySnapshotConfirmed: allowEmptySnapshot,
+    };
+  }
+
+  const UI_ID = 'seqta-calendar-sync-root';
+
+  function injectStyles() {
+    if (document.getElementById(`${UI_ID}-styles`)) return;
+    const style = document.createElement('style');
+    style.id = `${UI_ID}-styles`;
+    style.textContent = `
+      #${UI_ID} { font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 13px; }
+      #${UI_ID} .scs-wrap { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; }
+      #${UI_ID} .scs-btn {
+        border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px;
+        padding: 6px 12px; cursor: pointer; font-size: 13px; line-height: 1.2;
+      }
+      #${UI_ID} .scs-btn:hover { background: #1d4ed8; }
+      #${UI_ID} .scs-btn.secondary { background: #fff; color: #1e293b; border-color: #cbd5e1; }
+      #${UI_ID} .scs-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      #${UI_ID} .scs-status { max-width: 360px; color: #334155; white-space: normal; }
+      #${UI_ID} .scs-status.error { color: #b91c1c; }
+      #${UI_ID} .scs-status.success { color: #166534; }
+      #${UI_ID} .scs-backdrop {
+        position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: 999998;
+        display: flex; align-items: center; justify-content: center;
+      }
+      #${UI_ID} .scs-modal {
+        background: #fff; border-radius: 10px; width: min(480px, calc(100vw - 32px));
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25); padding: 20px; z-index: 999999;
+      }
+      #${UI_ID} .scs-modal h2 { margin: 0 0 12px; font-size: 18px; }
+      #${UI_ID} .scs-field { margin-bottom: 12px; }
+      #${UI_ID} .scs-field label { display: block; font-weight: 600; margin-bottom: 4px; }
+      #${UI_ID} .scs-field input {
+        width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px;
+        padding: 8px 10px; font-size: 13px;
+      }
+      #${UI_ID} .scs-field small { display: block; margin-top: 4px; color: #64748b; }
+      #${UI_ID} .scs-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+      #${UI_ID} .scs-link { color: #2563eb; text-decoration: none; }
+      #${UI_ID} .scs-link:hover { text-decoration: underline; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function mountUi() {
+    if (document.getElementById(UI_ID)) return;
+
+    injectStyles();
+
+    const root = document.createElement('div');
+    root.id = UI_ID;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'scs-wrap';
+
+    const syncBtn = document.createElement('button');
+    syncBtn.type = 'button';
+    syncBtn.className = 'scs-btn';
+    syncBtn.textContent = 'Sync Timetable';
+
+    const settingsBtn = document.createElement('button');
+    settingsBtn.type = 'button';
+    settingsBtn.className = 'scs-btn secondary';
+    settingsBtn.textContent = 'Calendar Settings';
+
+    const status = document.createElement('div');
+    status.className = 'scs-status';
+
+    wrap.appendChild(syncBtn);
+    wrap.appendChild(settingsBtn);
+    wrap.appendChild(status);
+    root.appendChild(wrap);
+
+    const toolbar = document.getElementById('toolbar');
+    if (toolbar) {
+      toolbar.appendChild(root);
+    } else {
+      root.style.position = 'fixed';
+      root.style.top = '12px';
+      root.style.right = '12px';
+      root.style.zIndex = '999997';
+      root.style.background = '#fff';
+      root.style.padding = '8px';
+      root.style.borderRadius = '8px';
+      root.style.boxShadow = '0 4px 16px rgba(0,0,0,0.12)';
+      document.body.appendChild(root);
+    }
+
+    /** @param {string} message @param {'info'|'success'|'error'} [kind] */
+    function setStatus(message, kind = 'info') {
+      status.textContent = message;
+      status.className = `scs-status${kind === 'error' ? ' error' : kind === 'success' ? ' success' : ''}`;
+    }
+
+    function openSettingsModal() {
+      const existing = document.querySelector(`#${UI_ID} .scs-backdrop`);
+      if (existing) existing.remove();
+
+      const config = loadConfig();
+      const backdrop = document.createElement('div');
+      backdrop.className = 'scs-backdrop';
+
+      const modal = document.createElement('div');
+      modal.className = 'scs-modal';
+      modal.innerHTML = `
+        <h2>SEQTA Calendar Sync</h2>
+        <div class="scs-field">
+          <label for="scs-backend">Backend URL</label>
+          <input id="scs-backend" type="url" placeholder="https://timetable.leoze.top" />
+          <small>Base URL of your seqta-calendar server (no trailing slash).</small>
+        </div>
+        <div class="scs-field">
+          <label for="scs-token">Upload token</label>
+          <input id="scs-token" type="password" autocomplete="off" placeholder="scu_…" />
+          <small>From <code>npm run cli -- create-feed</code>. Never share this token.</small>
+        </div>
+        <div class="scs-field">
+          <label for="scs-calendar">Calendar URL (optional)</label>
+          <input id="scs-calendar" type="url" placeholder="https://timetable.leoze.top/calendar/scc_….ics" />
+          <small>Apple Calendar subscription link — shown after successful sync.</small>
+        </div>
+        <div class="scs-field">
+          <label for="scs-weeks">Weeks to sync</label>
+          <input id="scs-weeks" type="number" min="1" max="${DEFAULTS.maxWeeks}" />
+          <small>Week-by-week fetch (max ${DEFAULTS.maxWeeks} weeks ≈ 119 days).</small>
+        </div>
+        <div class="scs-field">
+          <label for="scs-student">Student ref override (optional)</label>
+          <input id="scs-student" type="text" placeholder="4284" />
+          <small>Must match the feed's studentRef. Auto-detected when possible.</small>
+        </div>
+        <div class="scs-actions">
+          <button type="button" class="scs-btn secondary" data-action="cancel">Cancel</button>
+          <button type="button" class="scs-btn" data-action="save">Save</button>
+        </div>
+      `;
+
+      /** @type {HTMLInputElement | null} */
+      const backendInput = modal.querySelector('#scs-backend');
+      /** @type {HTMLInputElement | null} */
+      const tokenInput = modal.querySelector('#scs-token');
+      /** @type {HTMLInputElement | null} */
+      const calendarInput = modal.querySelector('#scs-calendar');
+      /** @type {HTMLInputElement | null} */
+      const weeksInput = modal.querySelector('#scs-weeks');
+      /** @type {HTMLInputElement | null} */
+      const studentInput = modal.querySelector('#scs-student');
+
+      if (backendInput) backendInput.value = config.backendUrl;
+      if (tokenInput) tokenInput.value = config.uploadToken;
+      if (calendarInput) calendarInput.value = config.calendarUrl;
+      if (weeksInput) weeksInput.value = String(config.weeksAhead);
+      if (studentInput) studentInput.value = config.studentRefOverride;
+
+      backdrop.appendChild(modal);
+      root.appendChild(backdrop);
+
+      backdrop.addEventListener('click', (event) => {
+        if (event.target === backdrop) backdrop.remove();
+      });
+
+      modal.querySelector('[data-action="cancel"]')?.addEventListener('click', () => backdrop.remove());
+      modal.querySelector('[data-action="save"]')?.addEventListener('click', () => {
+        setSetting(STORAGE.backendUrl, backendInput?.value.trim() || DEFAULTS.backendUrl);
+        setSetting(STORAGE.uploadToken, tokenInput?.value.trim() || '');
+        setSetting(STORAGE.calendarUrl, calendarInput?.value.trim() || '');
+        setSetting(STORAGE.weeksAhead, clampWeeks(Number(weeksInput?.value) || DEFAULTS.weeksAhead));
+        setSetting(STORAGE.studentRefOverride, studentInput?.value.trim() || '');
+        backdrop.remove();
+        setStatus('Settings saved.', 'success');
+      });
+    }
+
+    settingsBtn.addEventListener('click', openSettingsModal);
+
+    syncBtn.addEventListener('click', async () => {
+      const config = loadConfig();
+      if (!config.uploadToken) {
+        setStatus('Configure upload token first.', 'error');
+        openSettingsModal();
+        return;
+      }
+
+      syncBtn.disabled = true;
+      settingsBtn.disabled = true;
+      setStatus('Starting sync…');
+
+      try {
+        const { result, stats, emptySnapshotConfirmed } = await runSync(setStatus);
+        const r = result?.result || {};
+        const changed = result?.changed ? ' (calendar updated)' : '';
+        const replayed = result?.replayed ? ' [replay]' : '';
+        const emptyNote = emptySnapshotConfirmed ? ' Empty holiday snapshot confirmed.' : '';
+        let message =
+          `Sync OK${changed}${replayed}: ${stats.lessonCount} lessons, ` +
+          `${r.inserted ?? 0} new, ${r.updated ?? 0} updated, ${r.removed ?? 0} removed.` +
+          emptyNote;
+        if (stats.weeksFailed > 0) {
+          message += ` Warning: ${stats.weeksFailed} week(s) incomplete — deletions skipped for those ranges.`;
+        }
+        setStatus(message, 'success');
+
+        const calendarUrl = loadConfig().calendarUrl;
+        if (calendarUrl) {
+          const link = document.createElement('a');
+          link.href = calendarUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.className = 'scs-link';
+          link.textContent = ' Open calendar feed';
+          status.appendChild(link);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus(message, 'error');
+        console.error('[seqta-calendar-sync]', error);
+      } finally {
+        syncBtn.disabled = false;
+        settingsBtn.disabled = false;
+      }
+    });
+
+    const config = loadConfig();
+    if (!config.uploadToken) {
+      setStatus('Set upload token in Calendar Settings.');
+    }
+  }
+
+  function waitForTimetablePage() {
+    const selectors = ['.timetablepage', '.timetable', '#toolbar'];
+    const found = selectors.some((sel) => document.querySelector(sel));
+    if (found) {
+      mountUi();
+      return;
+    }
+
+    const observer = new MutationObserver(() => {
+      if (selectors.some((sel) => document.querySelector(sel))) {
+        observer.disconnect();
+        mountUi();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    // Also mount a floating panel after timeout so settings remain reachable on non-timetable pages.
+    window.setTimeout(() => {
+      if (!document.getElementById(UI_ID)) mountUi();
+    }, 5000);
+  }
+
+  waitForTimetablePage();
+})();
