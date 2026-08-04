@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard · SEQTA Calendar</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <div id="nav"></div>
+      <h1>Dashboard</h1>
+      <div id="content">Loading…</div>
+    </div>
+    <script src="/js/api.js"></script>
+    <script>
+      async function main() {
+        document.getElementById('nav').innerHTML = renderNav('dashboard.html');
+        const data = await requireAuth();
+        if (!data) return;
+        const dash = await api('/api/me/dashboard');
+        document.getElementById('content').innerHTML = `
+          <div class="grid">
+            <div class="card"><div class="stat-label">Account</div><div class="stat-value">${dash.account.accountStatus}</div></div>
+            <div class="card"><div class="stat-label">Sync</div><div class="stat-value">${dash.account.syncEnabled ? 'Enabled' : 'Disabled'}</div></div>
+            <div class="card"><div class="stat-label">Feed</div><div class="stat-value">${dash.account.feedEnabled ? 'Enabled' : 'Disabled'}</div></div>
+            <div class="card"><div class="stat-label">Active events</div><div class="stat-value">${dash.events.active}</div></div>
+            <div class="card"><div class="stat-label">Devices</div><div class="stat-value">${dash.devices.active} / ${dash.devices.max}</div></div>
+            <div class="card"><div class="stat-label">Last sync</div><div class="stat-value">${formatDateTime(dash.calendar.lastSyncedAt)}</div></div>
+          </div>
+          <div class="card">
+            <h2>Calendar</h2>
+            <p><strong>${dash.calendar.name}</strong> · revision ${dash.calendar.revision}</p>
+            <p>Last sync status: ${dash.calendar.lastSyncStatus}</p>
+            ${dash.sourceIdentity ? `<p>Bound to SEQTA student <span class="mono">${dash.sourceIdentity.studentRef}</span> on ${dash.sourceIdentity.schoolHost}</p>` : '<p>Source identity will lock on first successful sync.</p>'}
+          </div>`;
+      }
+      main().catch((err) => {
+        document.getElementById('content').innerHTML = `<p class="error">${err.message}</p>`;
+      });
+    </script>
+  </body>
+</html>

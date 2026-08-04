@@ -1,32 +1,43 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { validateDataDirectoryWritable } from '../../config.js';
 import { isMigrationComplete } from '../../db/migrate.js';
+import { pingDatabase } from '../../db/client.js';
 
 export const healthRoutes: FastifyPluginAsync = async (app) => {
   app.get('/health/live', async () => ({ status: 'ok' }));
 
   app.get('/health/ready', async (_request, reply) => {
     const checks: Record<string, boolean> = {
-      sqlite: false,
+      postgres: false,
       migrations: false,
-      dataDirectoryWritable: false,
+      deviceRole: false,
+      feedRole: false,
       uidSecretLoaded: false,
     };
 
     try {
-      app.db.prepare('SELECT 1').get();
-      checks.sqlite = true;
+      checks.postgres = await pingDatabase(app.db.migrator);
     } catch {
-      checks.sqlite = false;
+      checks.postgres = false;
     }
 
     try {
-      checks.migrations = isMigrationComplete(app.db);
+      checks.migrations = await isMigrationComplete(app.db.migrator);
     } catch {
       checks.migrations = false;
     }
 
-    checks.dataDirectoryWritable = validateDataDirectoryWritable(app.config.databasePath);
+    try {
+      checks.deviceRole = await pingDatabase(app.db.device);
+    } catch {
+      checks.deviceRole = false;
+    }
+
+    try {
+      checks.feedRole = await pingDatabase(app.db.feed);
+    } catch {
+      checks.feedRole = false;
+    }
+
     checks.uidSecretLoaded = app.config.uidSecret.length >= 32;
 
     const ready = Object.values(checks).every(Boolean);

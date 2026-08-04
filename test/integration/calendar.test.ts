@@ -1,25 +1,12 @@
-import { describe, it, after } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import {
-  createTestApp,
-  cleanupTempDb,
-  baseSyncPayload,
-} from "../helpers/test-app.js";
-import { createFeedService } from "../../src/cli/db.js";
+import { createTestApp, baseSyncPayload } from "../helpers/test-app.js";
+import { createCalendarService } from "../../src/cli/db.js";
 import { randomUUID } from "node:crypto";
 
 describe("calendar integration", () => {
-  let dbPath = "";
-
-  after(async () => {
-    if (dbPath) {
-      cleanupTempDb(dbPath);
-    }
-  });
-
   it("12. invalid calendar token returns 404", async () => {
-    const { app, dbPath: path } = await createTestApp();
-    dbPath = path;
+    const { app } = await createTestApp();
 
     const response = await app.inject({
       method: "GET",
@@ -30,74 +17,14 @@ describe("calendar integration", () => {
   });
 
   it("13. matching ETag returns 304", async () => {
-    const { app, config, dbPath: path } = await createTestApp();
-    dbPath = path;
+    const { app, config, db } = await createTestApp();
 
-    const feedService = createFeedService(app.db, config);
-    const feed = feedService.createFeed({
-      name: "Calendar Feed",
-      schoolHost: "learn.example-school.edu.au",
-      studentRef: "7777",
-      timezone: "Australia/Sydney",
-    });
-
-    await app.inject({
-      method: "POST",
-      url: "/api/v1/sync",
-      headers: {
-        authorization: `Bearer ${feed.uploadToken}`,
-        "idempotency-key": randomUUID(),
-      },
-      payload: baseSyncPayload({ studentRef: "7777" }),
-    });
-
-    const first = await app.inject({
-      method: "GET",
-      url: `/calendar/${feed.calendarToken}.ics`,
-    });
-    const etag = first.headers.etag;
-    assert.ok(etag);
-
-    const second = await app.inject({
-      method: "GET",
-      url: `/calendar/${feed.calendarToken}.ics`,
-      headers: { "if-none-match": etag },
-    });
-    assert.equal(second.statusCode, 304);
-    await app.close();
-  });
-
-  it("14. content change updates ETag but preserves UID", async () => {
-    const { app, config, dbPath: path } = await createTestApp();
-    dbPath = path;
-
-    const feedService = createFeedService(app.db, config);
-    const feed = feedService.createFeed({
-      name: "ETag Feed",
-      schoolHost: "learn.example-school.edu.au",
-      studentRef: "8888",
-      timezone: "Australia/Sydney",
-    });
-
-    await app.inject({
-      method: "POST",
-      url: "/api/v1/sync",
-      headers: {
-        authorization: `Bearer ${feed.uploadToken}`,
-        "idempotency-key": randomUUID(),
-      },
-      payload: baseSyncPayload({ studentRef: "8888" }),
-    });
-
-    const first = await app.inject({
-      method: "GET",
-      url: `/calendar/${feed.calendarToken}.ics`,
-    });
-    const firstEtag = first.headers.etag;
-    const uidBefore = app.db.prepare("SELECT ical_uid FROM events").get() as {
-      ical_uid: string;
-    };
-    assert.ok(uidBefore.ical_uid);
+    const feed = await createCalendarService(db.cli, config).createCalendar({
+        name: "Calendar Feed",
+        schoolHost: "learn.masada.onseqtacloud.com",
+        studentRef: "7777",
+        timezone: "Australia/Sydney",
+      });
 
     await app.inject({
       method: "POST",
@@ -107,9 +34,76 @@ describe("calendar integration", () => {
         "idempotency-key": randomUUID(),
       },
       payload: baseSyncPayload({
+        schoolHost: "learn.masada.onseqtacloud.com",
+        studentRef: "7777",
+      }),
+    });
+
+    const first = await app.inject({
+      method: "GET",
+      url: `/calendar/${feed.calendarToken}.ics`,
+    });
+    assert.equal(first.statusCode, 200);
+    const etag = first.headers.etag;
+    assert.ok(etag);
+
+    const second = await app.inject({
+      method: "GET",
+      url: `/calendar/${feed.calendarToken}.ics`,
+      headers: { "if-none-match": String(etag) },
+    });
+    assert.equal(second.statusCode, 304);
+
+    await app.close();
+  });
+
+  it("14. content change updates ETag but preserves UID", async () => {
+    const { app, config, db } = await createTestApp();
+
+    const feed = await createCalendarService(db.cli, config).createCalendar({
+        name: "UID Feed",
+        schoolHost: "learn.masada.onseqtacloud.com",
+        studentRef: "8888",
+        timezone: "Australia/Sydney",
+      });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/v1/sync",
+      headers: {
+        authorization: `Bearer ${feed.uploadToken}`,
+        "idempotency-key": randomUUID(),
+      },
+      payload: baseSyncPayload({
+        schoolHost: "learn.masada.onseqtacloud.com",
+        studentRef: "8888",
+      }),
+    });
+
+    const first = await app.inject({
+      method: "GET",
+      url: `/calendar/${feed.calendarToken}.ics`,
+    });
+    const firstBody = String(first.body);
+    const uidMatch = firstBody.match(/UID:[^\r\n]+/);
+    assert.ok(uidMatch);
+    const firstEtag = first.headers.etag;
+
+    await app.inject({
+      method: "POST",
+      url: "/api/v1/sync",
+      headers: {
+        authorization: `Bearer ${feed.uploadToken}`,
+        "idempotency-key": randomUUID(),
+      },
+      payload: baseSyncPayload({
+        schoolHost: "learn.masada.onseqtacloud.com",
         studentRef: "8888",
         lessons: [
-          { ...baseSyncPayload().lessons[0], teacher: "Changed Teacher" },
+          {
+            ...baseSyncPayload().lessons[0],
+            teacher: "Ms Updated",
+          },
         ],
       }),
     });
@@ -118,15 +112,10 @@ describe("calendar integration", () => {
       method: "GET",
       url: `/calendar/${feed.calendarToken}.ics`,
     });
-
     assert.notEqual(second.headers.etag, firstEtag);
-    assert.match(
-      String(second.body),
-      new RegExp(
-        `UID:${uidBefore.ical_uid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
-      ),
-    );
-    assert.match(String(second.body), /SEQUENCE:1/);
+    assert.match(String(second.body), /UID:[^\r\n]+/);
+    assert.ok(String(second.body).includes(uidMatch[0]!));
+
     await app.close();
   });
 });

@@ -1,41 +1,56 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import Database from 'better-sqlite3';
+import type { DbClient } from './client.js';
+import { createDbClient, createPool } from './client.js';
 import { loadConfig } from '../config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, 'migrations');
+const MIGRATIONS_DIR = join(__dirname, '../../database/migrations');
 
-export const MIGRATION_FILES = ['001_initial.sql'] as const;
+export const MIGRATION_FILES = [
+  '001_v2_schema.sql',
+  '002_rls_policies.sql',
+  '003_db_roles.sql',
+] as const;
 
-export function applyMigrations(db: Database.Database): string[] {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version     TEXT PRIMARY KEY,
-      applied_at  TEXT NOT NULL
-    ) STRICT;
-  `);
+export function listMigrationFiles(): string[] {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter((name) => name.endsWith('.sql'))
+    .sort();
+}
 
-  const applied = new Set(
-    db
-      .prepare('SELECT version FROM schema_migrations')
-      .all()
-      .map((row) => (row as { version: string }).version),
+export async function applyMigrations(db: DbClient): Promise<string[]> {
+  const exists = await db.queryOne<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'schema_migrations'
+     ) AS exists`,
   );
+  if (!exists?.exists) {
+    await db.exec(`
+      CREATE TABLE schema_migrations (
+        version     TEXT PRIMARY KEY,
+        applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+  }
+
+  const appliedRows = await db.query<{ version: string }>(
+    'SELECT version FROM schema_migrations',
+  );
+  const applied = new Set(appliedRows.map((row) => row.version));
 
   const newlyApplied: string[] = [];
-  const now = new Date().toISOString();
-
-  for (const file of MIGRATION_FILES) {
+  for (const file of listMigrationFiles()) {
     if (applied.has(file)) {
       continue;
     }
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    db.exec(sql);
-    db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
-      file,
-      now,
+    await db.exec(sql);
+    await db.exec(
+      'INSERT INTO schema_migrations (version, applied_at) VALUES ($1, now())',
+      [file],
     );
     newlyApplied.push(file);
   }
@@ -43,36 +58,38 @@ export function applyMigrations(db: Database.Database): string[] {
   return newlyApplied;
 }
 
-export function getAppliedMigrations(db: Database.Database): string[] {
-  const rows = db
-    .prepare('SELECT version FROM schema_migrations ORDER BY version')
-    .all() as Array<{ version: string }>;
+export async function getAppliedMigrations(db: DbClient): Promise<string[]> {
+  const rows = await db.query<{ version: string }>(
+    'SELECT version FROM schema_migrations ORDER BY version',
+  );
   return rows.map((row) => row.version);
 }
 
-export function isMigrationComplete(db: Database.Database): boolean {
-  const applied = new Set(getAppliedMigrations(db));
+export async function isMigrationComplete(db: DbClient): Promise<boolean> {
+  const applied = new Set(await getAppliedMigrations(db));
   return MIGRATION_FILES.every((file) => applied.has(file));
 }
 
-function runCli(): void {
+async function runCli(): Promise<void> {
   const config = loadConfig();
-  mkdirSync(dirname(config.databasePath), { recursive: true });
-  const db = new Database(config.databasePath);
+  const pool = await createPool(config.databaseUrl);
+  const db = createDbClient(pool);
   try {
-    db.pragma('foreign_keys = ON');
-    const applied = applyMigrations(db);
+    const applied = await applyMigrations(db);
     if (applied.length === 0) {
       console.log('No pending migrations.');
     } else {
       console.log(`Applied migrations: ${applied.join(', ')}`);
     }
   } finally {
-    db.close();
+    await db.close();
   }
 }
 
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
-  runCli();
+  runCli().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }

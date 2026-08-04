@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Invitations</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <div id="nav"></div>
+      <h1>Invitations</h1>
+      <div class="card">
+        <div class="field"><label for="name">Expected name</label><input id="name" /></div>
+        <div class="field"><label for="note">Note</label><input id="note" /></div>
+        <button id="createBtn" type="button">Create invitation</button>
+        <pre id="created" class="mono"></pre>
+      </div>
+      <div id="content">Loading…</div>
+    </div>
+    <script src="/js/admin-api.js"></script>
+    <script>
+      async function loadInvites() {
+        const data = await adminApi('/api/admin/invitations');
+        document.getElementById('content').innerHTML = `
+          <div class="card"><table>
+            <tr><th>Name</th><th>Expires</th><th>Used</th><th></th></tr>
+            ${data.invitations.map((i) => `<tr>
+              <td>${i.expectedName || '—'}</td>
+              <td>${formatDateTime(i.expiresAt)}</td>
+              <td>${i.usedAt ? 'yes' : 'no'}</td>
+              <td>${!i.usedAt ? `<button data-id="${i.id}" class="del secondary">Delete</button>` : ''}</td>
+            </tr>`).join('')}
+          </table></div>`;
+        document.querySelectorAll('.del').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            await adminApi(`/api/admin/invitations/${btn.dataset.id}`, { method: 'DELETE' });
+            await loadInvites();
+          });
+        });
+      }
+      async function main() {
+        document.getElementById('nav').innerHTML = renderAdminNav('invitations.html');
+        if (!(await requireAdmin())) return;
+        document.getElementById('createBtn').addEventListener('click', async () => {
+          const result = await adminApi('/api/admin/invitations', {
+            method: 'POST',
+            body: JSON.stringify({
+              expectedName: document.getElementById('name').value.trim() || undefined,
+              note: document.getElementById('note').value.trim() || undefined,
+            }),
+          });
+          document.getElementById('created').textContent = `Invite URL:\n${result.inviteUrl}`;
+          await loadInvites();
+        });
+        await loadInvites();
+      }
+      main().catch((e) => { document.getElementById('content').textContent = e.message; });
+    </script>
+    <script src="/js/api.js"></script>
+  </body>
+</html>

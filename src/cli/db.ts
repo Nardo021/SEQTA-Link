@@ -1,44 +1,43 @@
-import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import { loadConfig, type AppConfig } from "../config.js";
-import { applyMigrations } from "../db/migrate.js";
-import { FeedService } from "../modules/feeds/feed.service.js";
-import { FeedRepository } from "../modules/feeds/feed.repository.js";
-import { createTokenService } from "../modules/feeds/token.service.js";
+import {
+  createDbClient,
+  createPool,
+  ensureRoleGrants,
+  type AppDatabase,
+  type DbClient,
+} from '../db/client.js';
+import { attachRoleClients } from '../db/app-database.js';
+import { applyMigrations } from '../db/migrate.js';
+import { loadConfig, type AppConfig } from '../config.js';
+import { createCalendarService as scopedCreateCalendarService } from '../services/scoped-services.js';
+import { createTokenService } from '../modules/feeds/token.service.js';
+import type { CalendarService } from '../modules/calendars/calendar.service.js';
 
-export function openDatabase(databasePath?: string): {
-  db: Database.Database;
+export async function openDatabase(databaseUrl?: string): Promise<{
+  db: AppDatabase;
   config: AppConfig;
-} {
+  pool: Awaited<ReturnType<typeof createPool>>;
+}> {
   const config = loadConfig({
     ...process.env,
-    ...(databasePath ? { DATABASE_PATH: databasePath } : {}),
+    ...(databaseUrl ? { DATABASE_URL: databaseUrl } : {}),
   });
-  mkdirSync(dirname(config.databasePath), { recursive: true });
-  const db = new Database(config.databasePath);
-  db.pragma("foreign_keys = ON");
-  db.pragma("journal_mode = WAL");
-  db.pragma("busy_timeout = 5000");
-  applyMigrations(db);
-  return { db, config };
+  const pool = await createPool(config.databaseUrl);
+  const bootstrap = createDbClient(pool);
+  await applyMigrations(bootstrap);
+  await ensureRoleGrants(bootstrap);
+  const device = createDbClient(pool, 'seqta_device_api');
+  const db = attachRoleClients(pool, device);
+  return { db, config, pool };
 }
 
-export function createFeedService(
-  db: Database.Database,
-  config: AppConfig,
-): FeedService {
-  return new FeedService(
-    config,
-    createTokenService(config),
-    new FeedRepository(db),
-  );
+export function createCalendarService(db: DbClient, config: AppConfig): CalendarService {
+  return scopedCreateCalendarService(db, config, createTokenService(config));
 }
 
 export function testSecretsEnv(): Record<string, string> {
   return {
-    TOKEN_PEPPER: Buffer.alloc(32, 1).toString("base64"),
-    UID_SECRET: Buffer.alloc(32, 2).toString("base64"),
-    ALLOWED_ORIGINS: "https://learn.example-school.edu.au",
+    TOKEN_PEPPER: Buffer.alloc(32, 1).toString('base64'),
+    UID_SECRET: Buffer.alloc(32, 2).toString('base64'),
+    ALLOWED_ORIGINS: 'https://learn.masada.onseqtacloud.com',
   };
 }

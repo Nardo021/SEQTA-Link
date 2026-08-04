@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Users</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <div id="nav"></div>
+      <h1>Users</h1>
+      <div id="content">Loading…</div>
+    </div>
+    <script src="/js/api.js"></script>
+    <script src="/js/admin-api.js"></script>
+    <script>
+      async function loadUsers() {
+        const data = await adminApi('/api/admin/users');
+        document.getElementById('content').innerHTML = `
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Status</th><th>Sync</th><th>Feed</th><th>Role</th><th></th></tr></thead>
+            <tbody>${data.users.map((u) => `
+              <tr>
+                <td>${u.displayName}</td>
+                <td>${u.accountStatus}</td>
+                <td>${u.syncEnabled ? 'on' : 'off'}</td>
+                <td>${u.feedEnabled ? 'on' : 'off'}</td>
+                <td>${u.role}</td>
+                <td><a href="/admin/user.html?id=${u.id}">Manage</a></td>
+              </tr>`).join('')}</tbody>
+          </table></div>`;
+      }
+      async function main() {
+        document.getElementById('nav').innerHTML = renderAdminNav('users.html');
+        if (!(await requireAdmin())) return;
+        await loadUsers();
+      }
+      main().catch((e) => { document.getElementById('content').textContent = e.message; });
+    </script>
+  </body>
+</html>

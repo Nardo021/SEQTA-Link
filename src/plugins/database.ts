@@ -1,31 +1,26 @@
 import fp from 'fastify-plugin';
-import Database from 'better-sqlite3';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
 import type { FastifyPluginAsync } from 'fastify';
+import { createDbClient, createPool, ensureRoleGrants } from '../db/client.js';
+import { attachRoleClients } from '../db/app-database.js';
 import { applyMigrations } from '../db/migrate.js';
 
 const databasePlugin: FastifyPluginAsync = async (app) => {
-  const { databasePath } = app.config;
-  mkdirSync(dirname(databasePath), { recursive: true });
+  const pool = await createPool(app.config.databaseUrl);
+  const bootstrap = createDbClient(pool);
 
-  const db = new Database(databasePath);
-  db.pragma('foreign_keys = ON');
-  db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
-  db.pragma('busy_timeout = 5000');
-  db.pragma('temp_store = MEMORY');
-
-  const applied = applyMigrations(db);
+  const applied = await applyMigrations(bootstrap);
   if (applied.length > 0) {
     app.log.info({ event: 'migration_completed', applied });
   }
+  await ensureRoleGrants(bootstrap);
 
+  const device = createDbClient(pool, 'seqta_device_api');
+  const db = attachRoleClients(pool, device);
   app.decorate('db', db);
 
   app.addHook('onClose', async () => {
-    db.close();
+    await pool.end();
   });
 };
 
-export default fp(databasePlugin, { name: 'database' });
+export default fp(databasePlugin, { name: 'database', dependencies: [] });

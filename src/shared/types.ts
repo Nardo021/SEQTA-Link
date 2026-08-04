@@ -1,9 +1,25 @@
-export interface FeedRecord {
+export interface UserRecord {
   id: string;
+  oidcIssuer: string;
+  oidcSubject: string;
+  displayName: string;
+  email: string | null;
+  role: 'owner' | 'admin' | 'user';
+  accountStatus: 'active' | 'suspended' | 'deleted';
+  syncEnabled: boolean;
+  feedEnabled: boolean;
+  maxDevices: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalendarRecord {
+  id: string;
+  ownerUserId: string;
   name: string;
+  timezone: string;
   schoolHost: string;
   studentRef: string;
-  timezone: string;
   revision: number;
   lastChangedAt: string | null;
   lastSyncedAt: string | null;
@@ -11,9 +27,22 @@ export interface FeedRecord {
   updatedAt: string;
 }
 
+export interface DeviceRecord {
+  id: string;
+  ownerUserId: string;
+  calendarId: string;
+  name: string;
+  tokenPrefix: string;
+  status: 'active' | 'revoked';
+  createdAt: string;
+  lastSeenAt: string | null;
+  lastSyncedAt: string | null;
+}
+
 export interface EventRecord {
   id: string;
-  feedId: string;
+  ownerUserId: string;
+  calendarId: string;
   naturalKey: string;
   icalUid: string;
   localDate: string;
@@ -56,4 +85,10 @@ export interface SyncSuccessResponse {
   replayed?: boolean;
 }
 
-export type TokenType = 'upload' | 'calendar';
+export type TokenType = 'upload' | 'calendar' | 'device';
+
+export interface SyncContext {
+  calendar: CalendarRecord;
+  device: DeviceRecord;
+  ownerUserId: string;
+}

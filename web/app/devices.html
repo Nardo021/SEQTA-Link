@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Devices · SEQTA Calendar</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <div id="nav"></div>
+      <h1>Devices</h1>
+      <div class="card">
+        <p>Pair a browser running the Tampermonkey script.</p>
+        <button id="pairBtn" type="button">Generate pairing code</button>
+        <pre id="pairOut" class="mono"></pre>
+      </div>
+      <div id="content"></div>
+    </div>
+    <script src="/js/api.js"></script>
+    <script>
+      async function loadDevices() {
+        const data = await api('/api/me/devices');
+        if (!data.devices.length) {
+          document.getElementById('content').innerHTML = '<div class="card"><p>No devices paired yet.</p></div>';
+          return;
+        }
+        document.getElementById('content').innerHTML = `
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Prefix</th><th>Status</th><th>Last sync</th><th></th></tr></thead>
+            <tbody>${data.devices.map((d) => `
+              <tr>
+                <td>${d.name}</td>
+                <td class="mono">${d.tokenPrefix}</td>
+                <td>${d.status}</td>
+                <td>${formatDateTime(d.lastSyncedAt)}</td>
+                <td>${d.status === 'active' ? `<button data-id="${d.id}" class="revoke secondary">Revoke</button>` : ''}</td>
+              </tr>`).join('')}</tbody>
+          </table></div>`;
+        document.querySelectorAll('.revoke').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            await api(`/api/me/devices/${btn.dataset.id}`, { method: 'DELETE' });
+            await loadDevices();
+          });
+        });
+      }
+      async function main() {
+        document.getElementById('nav').innerHTML = renderNav('devices.html');
+        await requireAuth();
+        document.getElementById('pairBtn').addEventListener('click', async () => {
+          const result = await api('/api/me/pairing-codes', { method: 'POST', body: '{}' });
+          document.getElementById('pairOut').textContent =
+            `Pairing code: ${result.code}\nExpires: ${formatDateTime(result.expiresAt)}\n\nEnter this in Tampermonkey within 10 minutes.`;
+        });
+        await loadDevices();
+      }
+      main().catch((err) => {
+        document.getElementById('content').innerHTML = `<p class="error">${err.message}</p>`;
+      });
+    </script>
+  </body>
+</html>

@@ -1,8 +1,10 @@
-import type { Database } from 'better-sqlite3';
+import type { DbClient } from '../../db/client.js';
 
 export interface SyncRunRecord {
   id: string;
-  feedId: string;
+  calendarId: string;
+  deviceId: string;
+  ownerUserId: string;
   idempotencyKey: string;
   payloadHash: string;
   snapshotHash: string;
@@ -24,7 +26,9 @@ export interface SyncRunRecord {
 
 interface SyncRunRow {
   id: string;
-  feed_id: string;
+  calendar_id: string;
+  device_id: string;
+  owner_user_id: string;
   idempotency_key: string;
   payload_hash: string;
   snapshot_hash: string;
@@ -47,7 +51,9 @@ interface SyncRunRow {
 function mapSyncRunRow(row: SyncRunRow): SyncRunRecord {
   return {
     id: row.id,
-    feedId: row.feed_id,
+    calendarId: row.calendar_id,
+    deviceId: row.device_id,
+    ownerUserId: row.owner_user_id,
     idempotencyKey: row.idempotency_key,
     payloadHash: row.payload_hash,
     snapshotHash: row.snapshot_hash,
@@ -69,26 +75,29 @@ function mapSyncRunRow(row: SyncRunRow): SyncRunRecord {
 }
 
 export class SyncRepository {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: DbClient) {}
 
-  findSyncRunByIdempotencyKey(feedId: string, idempotencyKey: string): SyncRunRecord | null {
-    const row = this.db
-      .prepare(
-        `SELECT id, feed_id, idempotency_key, payload_hash, snapshot_hash,
-                range_from, range_until, received_count, normalized_count, duplicate_count,
-                inserted_count, updated_count, removed_count, restored_count, unchanged_count,
-                status, error_code, started_at, completed_at
-         FROM sync_runs
-         WHERE feed_id = ? AND idempotency_key = ?`,
-      )
-      .get(feedId, idempotencyKey) as SyncRunRow | undefined;
-
+  async findSyncRunByIdempotencyKey(
+    deviceId: string,
+    idempotencyKey: string,
+  ): Promise<SyncRunRecord | null> {
+    const row = await this.db.queryOne<SyncRunRow>(
+      `SELECT id, calendar_id, device_id, owner_user_id, idempotency_key, payload_hash, snapshot_hash,
+              range_from, range_until, received_count, normalized_count, duplicate_count,
+              inserted_count, updated_count, removed_count, restored_count, unchanged_count,
+              status, error_code, started_at, completed_at
+       FROM sync_runs
+       WHERE device_id = $1 AND idempotency_key = $2`,
+      [deviceId, idempotencyKey],
+    );
     return row ? mapSyncRunRow(row) : null;
   }
 
-  createSyncRun(input: {
+  async createSyncRun(input: {
     id: string;
-    feedId: string;
+    ownerUserId: string;
+    calendarId: string;
+    deviceId: string;
     idempotencyKey: string;
     payloadHash: string;
     snapshotHash: string;
@@ -98,20 +107,20 @@ export class SyncRepository {
     normalizedCount: number;
     duplicateCount: number;
     startedAt: string;
-  }): void {
-    this.db
-      .prepare(
-        `INSERT INTO sync_runs (
-          id, feed_id, idempotency_key, payload_hash, snapshot_hash,
-          range_from, range_until,
-          received_count, normalized_count, duplicate_count,
-          inserted_count, updated_count, removed_count, restored_count, unchanged_count,
-          status, started_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'running', ?)`,
-      )
-      .run(
+  }): Promise<void> {
+    await this.db.exec(
+      `INSERT INTO sync_runs (
+        id, owner_user_id, calendar_id, device_id, idempotency_key, payload_hash, snapshot_hash,
+        range_from, range_until,
+        received_count, normalized_count, duplicate_count,
+        inserted_count, updated_count, removed_count, restored_count, unchanged_count,
+        status, started_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0, 0, 0, 0, 0, 'running', $13)`,
+      [
         input.id,
-        input.feedId,
+        input.ownerUserId,
+        input.calendarId,
+        input.deviceId,
         input.idempotencyKey,
         input.payloadHash,
         input.snapshotHash,
@@ -121,10 +130,11 @@ export class SyncRepository {
         input.normalizedCount,
         input.duplicateCount,
         input.startedAt,
-      );
+      ],
+    );
   }
 
-  completeSyncRun(
+  async completeSyncRun(
     syncRunId: string,
     counts: {
       inserted: number;
@@ -134,22 +144,32 @@ export class SyncRepository {
       unchanged: number;
     },
     completedAt: string,
-  ): void {
-    this.db
-      .prepare(
-        `UPDATE sync_runs
-         SET inserted_count = ?, updated_count = ?, removed_count = ?,
-             restored_count = ?, unchanged_count = ?, status = 'success', completed_at = ?
-         WHERE id = ?`,
-      )
-      .run(
+  ): Promise<void> {
+    await this.db.exec(
+      `UPDATE sync_runs
+       SET inserted_count = $2, updated_count = $3, removed_count = $4,
+           restored_count = $5, unchanged_count = $6, status = 'success', completed_at = $7
+       WHERE id = $1`,
+      [
+        syncRunId,
         counts.inserted,
         counts.updated,
         counts.removed,
         counts.restored,
         counts.unchanged,
         completedAt,
-        syncRunId,
-      );
+      ],
+    );
+  }
+
+  async listByCalendar(calendarId: string, limit: number): Promise<SyncRunRecord[]> {
+    const rows = await this.db.query<SyncRunRow>(
+      `SELECT * FROM sync_runs
+       WHERE calendar_id = $1
+       ORDER BY started_at DESC
+       LIMIT $2`,
+      [calendarId, limit],
+    );
+    return rows.map(mapSyncRunRow);
   }
 }

@@ -2,11 +2,12 @@ import type { EventRecord } from "../../shared/types.js";
 import type { NormalizedLesson } from "../sync/sync.schemas.js";
 import { isDateInCompleteCoverage } from "../sync/coverage.js";
 import type { CoverageRange } from "../sync/coverage.js";
-import type { FeedEventIndex } from "./event.repository.js";
+import type { CalendarEventIndex } from "./event.repository.js";
 
 export function buildInsertedEvent(input: {
   id: string;
-  feedId: string;
+  ownerUserId: string;
+  calendarId: string;
   naturalKey: string;
   icalUid: string;
   lesson: NormalizedLesson;
@@ -15,7 +16,8 @@ export function buildInsertedEvent(input: {
 }): EventRecord {
   return {
     id: input.id,
-    feedId: input.feedId,
+    ownerUserId: input.ownerUserId,
+    calendarId: input.calendarId,
     naturalKey: input.naturalKey,
     icalUid: input.icalUid,
     localDate: input.lesson.date,
@@ -66,7 +68,7 @@ export function buildUpdatedEvent(
 }
 
 export function findActiveEventsInCompleteCoverage(
-  index: FeedEventIndex,
+  index: CalendarEventIndex,
   coverage: CoverageRange[],
 ): EventRecord[] {
   return [...index.eventsById.values()].filter(

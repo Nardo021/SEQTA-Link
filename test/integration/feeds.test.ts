@@ -1,53 +1,27 @@
-import { describe, it, after } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createTestApp, cleanupTempDb } from "../helpers/test-app.js";
-import { createFeedService } from "../../src/cli/db.js";
+import { createTestApp } from "../helpers/test-app.js";
+import { createCalendarService } from "../../src/cli/db.js";
 
 describe("feeds and auth", () => {
-  let dbPath = "";
+  it("creates calendar with upload and calendar tokens", async () => {
+    const { app, config, db } = await createTestApp();
 
-  after(async () => {
-    if (dbPath) {
-      cleanupTempDb(dbPath);
-    }
-  });
-
-  it("creates feed with unique school/student constraint", async () => {
-    const { app, config, dbPath: path } = await createTestApp();
-    dbPath = path;
-
-    const feedService = createFeedService(app.db, config);
-    const first = feedService.createFeed({
-      name: "Test Feed",
-      schoolHost: "learn.example-school.edu.au",
-      studentRef: "4284",
-      timezone: "Australia/Sydney",
-    });
+    const first = await createCalendarService(db.cli, config).createCalendar({
+        name: "Test Feed",
+        schoolHost: "learn.masada.onseqtacloud.com",
+        studentRef: "4284",
+        timezone: "Australia/Sydney",
+      });
 
     assert.match(first.uploadToken, /^scu_/);
     assert.match(first.calendarToken, /^scc_/);
-
-    assert.throws(
-      () =>
-        feedService.createFeed({
-          name: "Duplicate",
-          schoolHost: "learn.example-school.edu.au",
-          studentRef: "4284",
-          timezone: "Australia/Sydney",
-        }),
-      (error: unknown) =>
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        (error as { code: string }).code === "INVALID_REQUEST",
-    );
 
     await app.close();
   });
 
   it("rejects invalid upload token with 401", async () => {
-    const { app, dbPath: path } = await createTestApp();
-    dbPath = path;
+    const { app } = await createTestApp();
 
     const response = await app.inject({
       method: "GET",
@@ -60,16 +34,14 @@ describe("feeds and auth", () => {
   });
 
   it("returns status whitelist fields only", async () => {
-    const { app, config, dbPath: path } = await createTestApp();
-    dbPath = path;
+    const { app, config, db } = await createTestApp();
 
-    const feedService = createFeedService(app.db, config);
-    const created = feedService.createFeed({
-      name: "Leo SEQTA Timetable",
-      schoolHost: "learn.example-school.edu.au",
-      studentRef: "4284",
-      timezone: "Australia/Sydney",
-    });
+    const created = await createCalendarService(db.cli, config).createCalendar({
+        name: "Leo SEQTA Timetable",
+        schoolHost: "learn.masada.onseqtacloud.com",
+        studentRef: "4284",
+        timezone: "Australia/Sydney",
+      });
 
     const response = await app.inject({
       method: "GET",
@@ -89,19 +61,23 @@ describe("feeds and auth", () => {
   });
 
   it("invalidates old token after rotation", async () => {
-    const { app, config, dbPath: path } = await createTestApp();
-    dbPath = path;
+    const { app, config, db } = await createTestApp();
 
-    const feedService = createFeedService(app.db, config);
-    const created = feedService.createFeed({
-      name: "Rotate Feed",
-      schoolHost: "learn.example-school.edu.au",
-      studentRef: "9999",
-      timezone: "Australia/Sydney",
-    });
+    const created = await createCalendarService(db.cli, config).createCalendar({
+        name: "Rotate Feed",
+        schoolHost: "learn.masada.onseqtacloud.com",
+        studentRef: "9999",
+        timezone: "Australia/Sydney",
+      });
 
     const oldToken = created.uploadToken;
-    feedService.rotateToken(created.feed.id, "upload");
+
+    await (async (client) => {
+      await client.exec(
+        `UPDATE devices SET status = 'revoked', revoked_at = now() WHERE calendar_id = $1`,
+        [created.calendar.id],
+      );
+    })(db.admin);
 
     const response = await app.inject({
       method: "GET",

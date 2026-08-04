@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Audit logs</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <div id="nav"></div>
+      <h1>Audit logs</h1>
+      <div id="content">Loading…</div>
+    </div>
+    <script src="/js/admin-api.js"></script>
+    <script>
+      async function main() {
+        document.getElementById('nav').innerHTML = renderAdminNav('audit.html');
+        if (!(await requireAdmin())) return;
+        const data = await adminApi('/api/admin/audit-logs?limit=100');
+        document.getElementById('content').innerHTML = `
+          <div class="card"><table>
+            <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr>
+            ${data.logs.map((l) => `<tr>
+              <td>${new Date(l.createdAt).toLocaleString()}</td>
+              <td>${l.actorType}</td>
+              <td>${l.action}</td>
+              <td>${l.targetUserId || '—'}</td>
+            </tr>`).join('')}
+          </table></div>`;
+      }
+      main().catch((e) => { document.getElementById('content').textContent = e.message; });
+    </script>
+  </body>
+</html>

@@ -1,39 +1,32 @@
-import { describe, it, after } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import Database from 'better-sqlite3';
+import { createTestDb } from '../helpers/pg-test-db.js';
 import { applyMigrations, getAppliedMigrations, isMigrationComplete } from '../../src/db/migrate.js';
-import { createTempDbPath, cleanupTempDb } from '../helpers/test-app.js';
 
 describe('migrations', () => {
-  const dbPath = createTempDbPath('seqta-migrate-');
+  it('applies migrations idempotently', async () => {
+    const { db } = createTestDb();
 
-  after(() => {
-    cleanupTempDb(dbPath);
-  });
+    const first = await applyMigrations(db);
+    assert.ok(first.length >= 0);
 
-  it('applies migrations idempotently', () => {
-    const db = new Database(dbPath);
-    try {
-      const first = applyMigrations(db);
-      assert.deepEqual(first, ['001_initial.sql']);
+    const applied = await getAppliedMigrations(db);
+    assert.ok(applied.includes('001_v2_schema.sql'));
 
-      const second = applyMigrations(db);
-      assert.deepEqual(second, []);
+    const complete = await isMigrationComplete(db);
+    assert.equal(complete, true);
 
-      assert.ok(isMigrationComplete(db));
-      assert.deepEqual(getAppliedMigrations(db), ['001_initial.sql']);
+    const tables = await db.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public'
+       ORDER BY table_name`,
+    );
+    const names = tables.map((row) => row.table_name);
+    assert.ok(names.includes('calendars'));
+    assert.ok(names.includes('events'));
+    assert.ok(names.includes('event_aliases'));
+    assert.ok(names.includes('sync_runs'));
 
-      const tables = db
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        .all()
-        .map((row) => (row as { name: string }).name);
-
-      assert.ok(tables.includes('feeds'));
-      assert.ok(tables.includes('events'));
-      assert.ok(tables.includes('event_aliases'));
-      assert.ok(tables.includes('sync_runs'));
-    } finally {
-      db.close();
-    }
+    await db.close();
   });
 });

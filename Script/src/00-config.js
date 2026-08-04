@@ -6,6 +6,8 @@
     calendarUrl: 'seqtaCal.calendarUrl',
     weeksAhead: 'seqtaCal.weeksAhead',
     studentRefOverride: 'seqtaCal.studentRefOverride',
+    profiles: 'seqtaCal.profiles',
+    activeProfileId: 'seqtaCal.activeProfileId',
   };
 
   const DEFAULTS = {

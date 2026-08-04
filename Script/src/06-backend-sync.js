@@ -34,11 +34,9 @@
   /** @param {string} body @param {string} idempotencyKey @param {boolean} [allowEmptySnapshot] */
   async function postSyncPayload(body, idempotencyKey, allowEmptySnapshot = false) {
     const config = loadConfig();
-    if (!config.uploadToken) {
-      throw new Error('Upload token is not configured. Open settings and paste your scu_… token.');
-    }
-    if (!config.uploadToken.startsWith('scu_')) {
-      throw new Error('Upload token should start with scu_. Check your feed provisioning output.');
+    const token = config.deviceToken || config.uploadToken;
+    if (!token) {
+      throw new Error('No device or upload token configured. Pair a device or paste an scu_ token in settings.');
     }
 
     /** @type {Record<string, unknown>} */
@@ -47,12 +45,16 @@
       payload.allowEmptySnapshot = true;
     }
 
-    const url = `${config.backendUrl}/api/v1/sync`;
+    const useDeviceApi = token.startsWith('dvc_');
+    const url = useDeviceApi
+      ? `${config.backendUrl}/api/device/sync`
+      : `${config.backendUrl}/api/v1/sync`;
+
     const response = await gmRequest({
       method: 'POST',
       url,
       headers: {
-        Authorization: `Bearer ${config.uploadToken}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         'Idempotency-Key': idempotencyKey,
       },
@@ -76,7 +78,33 @@
     err.code = code;
     err.status = response.status;
     err.response = parsed;
+    if (code === 'SOURCE_IDENTITY_MISMATCH') {
+      err.message =
+        'Sync blocked. SEQTA shows a different student than this profile is bound to. Switch profile or sign in to the correct SEQTA account.';
+    }
     throw err;
+  }
+
+  /** @param {string} code @param {string} [deviceName] */
+  async function pairDevice(code, deviceName = 'Browser') {
+    const config = loadConfig();
+    const response = await gmRequest({
+      method: 'POST',
+      url: `${config.backendUrl}/api/device/pair`,
+      headers: { 'Content-Type': 'application/json' },
+      data: JSON.stringify({ code, deviceName }),
+    });
+    const parsed = response.responseText ? JSON.parse(response.responseText) : null;
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(parsed?.error?.message || `Pairing failed (${response.status})`);
+    }
+    upsertDeviceProfile({
+      name: deviceName,
+      deviceToken: parsed.deviceToken,
+      deviceId: parsed.deviceId,
+      calendarLabel: parsed.calendarLabel,
+    });
+    return parsed;
   }
 
   /** @param {{ lessons?: unknown[]; coverage?: CoverageWeek[] }} payload */

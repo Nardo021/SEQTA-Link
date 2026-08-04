@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Calendar · SEQTA Calendar</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <div id="nav"></div>
+      <h1>Calendar subscription</h1>
+      <div id="content">Loading…</div>
+    </div>
+    <script src="/js/api.js"></script>
+    <script>
+      async function main() {
+        document.getElementById('nav').innerHTML = renderNav('calendar.html');
+        await requireAuth();
+        const cal = await api('/api/me/calendar');
+        document.getElementById('content').innerHTML = `
+          <div class="card">
+            <p><strong>${cal.name}</strong> (${cal.timezone})</p>
+            <p>Token prefix: <span class="mono">${cal.tokenPrefix || '—'}</span></p>
+            <p>Feed status: ${cal.feedEnabled ? 'Enabled' : 'Disabled'}</p>
+            <p>Last synced: ${formatDateTime(cal.lastSyncedAt)}</p>
+            <button id="rotateBtn" type="button">Rotate calendar token</button>
+            <pre id="rotateOut" class="mono"></pre>
+          </div>`;
+        document.getElementById('rotateBtn').addEventListener('click', async () => {
+          const result = await api('/api/me/calendar/rotate-token', { method: 'POST', body: '{}' });
+          document.getElementById('rotateOut').textContent =
+            `New subscription URL:\n${result.calendarUrl}\n\nCopy this into Apple/Google Calendar. Previous links stop working immediately.`;
+        });
+      }
+      main().catch((err) => {
+        document.getElementById('content').innerHTML = `<p class="error">${err.message}</p>`;
+      });
+    </script>
+  </body>
+</html>

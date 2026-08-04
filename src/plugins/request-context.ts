@@ -12,7 +12,7 @@ const requestContextPlugin: FastifyPluginAsync = async (app) => {
       event: 'request_completed',
       requestId: request.requestId,
       route: request.routeOptions.url ?? request.url,
-      feedId: request.feed?.id,
+      feedId: request.calendar?.id ?? request.feed?.id,
       statusCode: reply.statusCode,
       durationMs: reply.elapsedTime,
     });

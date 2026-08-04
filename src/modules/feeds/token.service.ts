@@ -13,23 +13,35 @@ export class TokenService {
     };
   }
 
+  generateDeviceToken(): string {
+    return generateRawToken('device');
+  }
+
   hash(type: TokenType, rawToken: string): string {
     return hashToken(this.tokenPepper, type, rawToken);
   }
 
-  parseBearerToken(authorizationHeader: string | undefined): { rawToken: string; type: TokenType } {
+  parseBearerToken(
+    authorizationHeader: string | undefined,
+    allowedTypes: TokenType[] = ['upload'],
+  ): { rawToken: string; type: TokenType } {
     if (!authorizationHeader?.startsWith('Bearer ')) {
       throw new AppError('INVALID_TOKEN', 'Missing or invalid Authorization header.', 401);
     }
     const rawToken = authorizationHeader.slice('Bearer '.length).trim();
     const type = detectTokenType(rawToken);
-    if (!type) {
+    if (!type || !allowedTypes.includes(type)) {
       throw new AppError('INVALID_TOKEN', 'Invalid token format.', 401);
     }
-    if (type !== 'upload') {
-      throw new AppError('INVALID_TOKEN', 'Upload token required.', 401);
-    }
     return { rawToken, type };
+  }
+
+  parseUploadBearerToken(authorizationHeader: string | undefined): { rawToken: string; type: TokenType } {
+    return this.parseBearerToken(authorizationHeader, ['upload']);
+  }
+
+  parseDeviceBearerToken(authorizationHeader: string | undefined): { rawToken: string; type: TokenType } {
+    return this.parseBearerToken(authorizationHeader, ['device']);
   }
 
   parseCalendarTokenFromPath(tokenParam: string): { rawToken: string; type: TokenType } {

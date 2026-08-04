@@ -113,9 +113,19 @@ function mountUi() {
           <small>Base URL of your seqta-calendar server (no trailing slash).</small>
         </div>
         <div class="scs-field">
-          <label for="scs-token">Upload token</label>
+          <label for="scs-profile">Active profile</label>
+          <select id="scs-profile"></select>
+          <small>Switch between paired accounts on this browser.</small>
+        </div>
+        <div class="scs-field">
+          <label for="scs-pair-code">Pair new device</label>
+          <input id="scs-pair-code" type="text" placeholder="7K4P-92MX" />
+          <small>Generate a code in Portal → Devices, then paste it here.</small>
+        </div>
+        <div class="scs-field">
+          <label for="scs-token">Legacy upload token (optional)</label>
           <input id="scs-token" type="password" autocomplete="off" placeholder="scu_…" />
-          <small>From <code>npm run cli -- create-feed</code>. Never share this token.</small>
+          <small>Only for admin-provisioned legacy feeds.</small>
         </div>
         <div class="scs-field">
           <label for="scs-calendar">Calendar URL (optional)</label>
@@ -140,6 +150,10 @@ function mountUi() {
 
     /** @type {HTMLInputElement | null} */
     const backendInput = modal.querySelector("#scs-backend");
+    /** @type {HTMLSelectElement | null} */
+    const profileSelect = modal.querySelector("#scs-profile");
+    /** @type {HTMLInputElement | null} */
+    const pairCodeInput = modal.querySelector("#scs-pair-code");
     /** @type {HTMLInputElement | null} */
     const tokenInput = modal.querySelector("#scs-token");
     /** @type {HTMLInputElement | null} */
@@ -149,6 +163,14 @@ function mountUi() {
     /** @type {HTMLInputElement | null} */
     const studentInput = modal.querySelector("#scs-student");
 
+    const profiles = loadProfiles();
+    if (profileSelect) {
+      profileSelect.innerHTML = profiles.length
+        ? profiles.map((p) => `<option value="${p.id}">${p.name} (${p.calendarLabel || p.name})</option>`).join('')
+        : '<option value="">No profiles — pair a device</option>';
+      const active = getActiveProfile();
+      if (active) profileSelect.value = active.id;
+    }
     if (backendInput) backendInput.value = config.backendUrl;
     if (tokenInput) tokenInput.value = config.uploadToken;
     if (calendarInput) calendarInput.value = config.calendarUrl;
@@ -167,11 +189,24 @@ function mountUi() {
       ?.addEventListener("click", () => backdrop.remove());
     modal
       .querySelector('[data-action="save"]')
-      ?.addEventListener("click", () => {
+      ?.addEventListener("click", async () => {
         setSetting(
           STORAGE.backendUrl,
           backendInput?.value.trim() || DEFAULTS.backendUrl,
         );
+        if (profileSelect?.value) {
+          setActiveProfileId(profileSelect.value);
+        }
+        const pairCode = pairCodeInput?.value.trim();
+        if (pairCode) {
+          try {
+            await pairDevice(pairCode, "Browser");
+            setStatus("Device paired.", "success");
+          } catch (error) {
+            setStatus(error instanceof Error ? error.message : String(error), "error");
+            return;
+          }
+        }
         setSetting(STORAGE.uploadToken, tokenInput?.value.trim() || "");
         setSetting(STORAGE.calendarUrl, calendarInput?.value.trim() || "");
         setSetting(
@@ -191,11 +226,17 @@ function mountUi() {
 
   syncBtn.addEventListener("click", async () => {
     const config = loadConfig();
-    if (!config.uploadToken) {
-      setStatus("Configure upload token first.", "error");
+    if (!config.deviceToken && !config.uploadToken) {
+      setStatus("Pair a device or configure a legacy upload token first.", "error");
       openSettingsModal();
       return;
     }
+
+    const studentRef = await resolveStudentRef();
+    const confirmed = window.confirm(
+      `Current SEQTA student: ${studentRef}\nDestination account: ${config.calendarLabel}\n\nSync now?`,
+    );
+    if (!confirmed) return;
 
     syncBtn.disabled = true;
     settingsBtn.disabled = true;
@@ -240,7 +281,9 @@ function mountUi() {
   });
 
   const config = loadConfig();
-  if (!config.uploadToken) {
-    setStatus("Set upload token in Calendar Settings.");
+  if (!config.deviceToken && !config.uploadToken) {
+    setStatus("Pair a device in Calendar Settings.");
+  } else {
+    setStatus(`Profile: ${config.calendarLabel}`);
   }
 }

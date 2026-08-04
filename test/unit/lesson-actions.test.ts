@@ -5,7 +5,8 @@ import type { EventRecord } from "../../src/shared/types.js";
 
 const baseEvent: EventRecord = {
   id: "event-1",
-  feedId: "feed-1",
+  ownerUserId: "user-1",
+  calendarId: "calendar-1",
   naturalKey: "nk-1",
   icalUid: "uid@timetable.leoze.top",
   localDate: "2026-08-05",

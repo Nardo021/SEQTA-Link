@@ -1,0 +1,90 @@
+:root {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --primary: #2563eb;
+  --border: #e2e8f0;
+  --danger: #b91c1c;
+  --success: #166534;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.layout {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.nav a {
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+.nav a.active {
+  background: #dbeafe;
+  font-weight: 600;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.stat-label { color: var(--muted); font-size: 13px; }
+.stat-value { font-size: 20px; font-weight: 600; margin-top: 4px; }
+button, .btn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+button.secondary, .btn.secondary {
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+input, select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+.field { margin-bottom: 12px; }
+.field label { display: block; font-weight: 600; margin-bottom: 4px; }
+.error { color: var(--danger); }
+.success { color: var(--success); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

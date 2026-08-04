@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in · SEQTA Calendar</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <h1>Sign in</h1>
+      <div class="card">
+        <p id="status">Checking session…</p>
+        <p><a class="btn" href="/auth/login">Continue with Authentik</a></p>
+        <div id="dev-login" hidden>
+          <hr />
+          <p class="stat-label">Development login</p>
+          <div class="field">
+            <label for="displayName">Display name</label>
+            <input id="displayName" value="Dev User" />
+          </div>
+          <button id="devBtn" type="button">Dev sign in</button>
+        </div>
+      </div>
+    </div>
+    <script src="/js/api.js"></script>
+    <script>
+      async function init() {
+        try {
+          await api('/api/me');
+          window.location.href = '/app/dashboard.html';
+          return;
+        } catch {}
+        document.getElementById('status').textContent = 'Sign in to manage your timetable and devices.';
+        document.getElementById('dev-login').hidden = false;
+      }
+      document.getElementById('devBtn').addEventListener('click', async () => {
+        const displayName = document.getElementById('displayName').value.trim() || 'Dev User';
+        await api('/auth/dev-login', {
+          method: 'POST',
+          body: JSON.stringify({ displayName }),
+        });
+        window.location.href = '/app/dashboard.html';
+      });
+      init();
+    </script>
+  </body>
+</html>

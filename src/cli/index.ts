@@ -2,12 +2,14 @@ import { createFeedCommand } from './create-feed.js';
 import { rotateTokenCommand } from './rotate-token.js';
 import { inspectFeedCommand } from './inspect-feed.js';
 import { backupCommand } from './backup.js';
+import { migrateV1SqliteCommand } from './migrate-v1-sqlite.js';
 
 const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   'create-feed': createFeedCommand,
   'rotate-token': rotateTokenCommand,
   'inspect-feed': inspectFeedCommand,
   backup: backupCommand,
+  'migrate-v1-sqlite': migrateV1SqliteCommand,
 };
 
 async function main(): Promise<void> {

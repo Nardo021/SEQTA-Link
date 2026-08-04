@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sync history · SEQTA Calendar</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <div id="nav"></div>
+      <h1>Sync history</h1>
+      <div id="content">Loading…</div>
+    </div>
+    <script src="/js/api.js"></script>
+    <script>
+      async function main() {
+        document.getElementById('nav').innerHTML = renderNav('sync-history.html');
+        await requireAuth();
+        const data = await api('/api/me/sync-runs');
+        if (!data.runs.length) {
+          document.getElementById('content').innerHTML = '<div class="card"><p>No sync runs yet.</p></div>';
+          return;
+        }
+        document.getElementById('content').innerHTML = `
+          <div class="card"><table>
+            <thead><tr><th>Started</th><th>Status</th><th>Received</th><th>Inserted</th><th>Updated</th><th>Removed</th></tr></thead>
+            <tbody>${data.runs.map((r) => `
+              <tr>
+                <td>${formatDateTime(r.startedAt)}</td>
+                <td>${r.status}</td>
+                <td>${r.receivedCount}</td>
+                <td>${r.insertedCount}</td>
+                <td>${r.updatedCount}</td>
+                <td>${r.removedCount}</td>
+              </tr>`).join('')}</tbody>
+          </table></div>`;
+      }
+      main().catch((err) => {
+        document.getElementById('content').innerHTML = `<p class="error">${err.message}</p>`;
+      });
+    </script>
+  </body>
+</html>

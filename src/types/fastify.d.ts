@@ -1,19 +1,21 @@
 import type { FastifyRequest } from 'fastify';
-import type { FeedRecord } from '../shared/types.js';
-import type Database from 'better-sqlite3';
+import type { CalendarRecord, SyncContext } from '../shared/types.js';
 import type { AppConfig } from '../config.js';
+import type { AppDatabase } from '../db/client.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
     config: AppConfig;
-    db: Database.Database;
+    db: AppDatabase;
   }
 
   interface FastifyRequest {
     requestId: string;
-    feed?: FeedRecord;
+    syncContext?: SyncContext;
+    feed?: CalendarRecord;
+    calendar?: CalendarRecord;
     rawToken?: string;
-    tokenType?: 'upload' | 'calendar';
+    tokenType?: 'upload' | 'calendar' | 'device';
   }
 }
 

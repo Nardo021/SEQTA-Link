@@ -3,13 +3,32 @@ import type { TokenType } from './types.js';
 
 const UPLOAD_PREFIX = 'scu_';
 const CALENDAR_PREFIX = 'scc_';
+const DEVICE_PREFIX = 'dvc_';
 const TOKEN_RANDOM_BYTES = 32;
+const PAIRING_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ICAL_UID_DOMAIN = 'timetable.leoze.top';
 
 export function generateRawToken(type: TokenType): string {
-  const prefix = type === 'upload' ? UPLOAD_PREFIX : CALENDAR_PREFIX;
+  const prefix =
+    type === 'upload'
+      ? UPLOAD_PREFIX
+      : type === 'calendar'
+        ? CALENDAR_PREFIX
+        : DEVICE_PREFIX;
   const randomPart = randomBytes(TOKEN_RANDOM_BYTES).toString('base64url');
   return `${prefix}${randomPart}`;
+}
+
+export function generatePairingCode(): string {
+  let raw = '';
+  for (let i = 0; i < 8; i++) {
+    raw += PAIRING_CODE_CHARS[randomBytes(1)[0]! % PAIRING_CODE_CHARS.length];
+  }
+  return `${raw.slice(0, 4)}-${raw.slice(4)}`;
+}
+
+export function normalizePairingCode(code: string): string {
+  return code.replace(/-/g, '').toUpperCase();
 }
 
 export function hashToken(tokenPepper: Buffer, type: TokenType, rawToken: string): string {
@@ -24,6 +43,9 @@ export function detectTokenType(rawToken: string): TokenType | null {
   }
   if (rawToken.startsWith(CALENDAR_PREFIX)) {
     return 'calendar';
+  }
+  if (rawToken.startsWith(DEVICE_PREFIX)) {
+    return 'device';
   }
   return null;
 }

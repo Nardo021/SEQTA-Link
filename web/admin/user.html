@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Manage User</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <div id="nav"></div>
+      <h1>Manage user</h1>
+      <div id="content">Loading…</div>
+    </div>
+    <script src="/js/api.js"></script>
+    <script src="/js/admin-api.js"></script>
+    <script>
+      const userId = new URLSearchParams(location.search).get('id');
+      async function main() {
+        document.getElementById('nav').innerHTML = renderAdminNav('users.html');
+        if (!(await requireAdmin()) || !userId) return;
+        const data = await adminApi(`/api/admin/users/${userId}`);
+        const u = data.user;
+        document.getElementById('content').innerHTML = `
+          <div class="card">
+            <h2>${u.displayName}</h2>
+            <p>Status: ${u.accountStatus} · Sync: ${u.syncEnabled ? 'enabled' : 'disabled'} · Feed: ${u.feedEnabled ? 'enabled' : 'disabled'}</p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+              <button data-action="suspend">Suspend</button>
+              <button data-action="activate" class="secondary">Activate</button>
+              <button data-action="disable-sync" class="secondary">Disable sync</button>
+              <button data-action="enable-sync" class="secondary">Enable sync</button>
+              <button data-action="disable-feed" class="secondary">Disable feed</button>
+              <button data-action="enable-feed" class="secondary">Enable feed</button>
+              <button data-action="rotate-token" class="secondary">Rotate calendar token</button>
+            </div>
+            <pre id="out" class="mono" style="margin-top:12px"></pre>
+          </div>
+          <div class="card"><h3>Devices</h3><div id="devices">Loading…</div></div>
+          <div class="card"><h3>Timetable preview</h3><div id="timetable">Loading…</div></div>`;
+
+        const devices = await adminApi(`/api/admin/users/${userId}/devices`);
+        document.getElementById('devices').innerHTML = devices.devices.length
+          ? `<table><tr><th>Name</th><th>Status</th><th>Prefix</th><th></th></tr>
+            ${devices.devices.map((d) => `<tr><td>${d.name}</td><td>${d.status}</td><td>${d.tokenPrefix}</td>
+            <td>${d.status === 'active' ? `<button data-device="${d.id}" class="revoke secondary">Revoke</button>` : ''}</td></tr>`).join('')}</table>`
+          : '<p>No devices.</p>';
+
+        document.querySelectorAll('.revoke').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            await adminApi(`/api/admin/devices/${btn.dataset.device}/revoke`, { method: 'POST', body: '{}' });
+            location.reload();
+          });
+        });
+
+        const tt = await adminApi(`/api/admin/users/${userId}/timetable`);
+        document.getElementById('timetable').innerHTML = tt.events.length
+          ? `<table><tr><th>Date</th><th>Title</th><th>Teacher</th></tr>
+            ${tt.events.slice(0, 20).map((e) => `<tr><td>${e.localDate}</td><td>${e.title}</td><td>${e.teacher || '—'}</td></tr>`).join('')}</table>`
+          : '<p>No events.</p>';
+
+        document.querySelectorAll('[data-action]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const action = btn.dataset.action;
+            const path = {
+              suspend: `/api/admin/users/${userId}/suspend`,
+              activate: `/api/admin/users/${userId}/activate`,
+              'disable-sync': `/api/admin/users/${userId}/disable-sync`,
+              'enable-sync': `/api/admin/users/${userId}/enable-sync`,
+              'disable-feed': `/api/admin/users/${userId}/disable-feed`,
+              'enable-feed': `/api/admin/users/${userId}/enable-feed`,
+              'rotate-token': `/api/admin/users/${userId}/rotate-calendar-token`,
+            }[action];
+            const result = await adminApi(path, { method: 'POST', body: '{}' });
+            document.getElementById('out').textContent = JSON.stringify(result, null, 2);
+          });
+        });
+      }
+      main().catch((e) => { document.getElementById('content').textContent = e.message; });
+    </script>
+  </body>
+</html>
