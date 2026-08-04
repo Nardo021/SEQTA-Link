@@ -19,19 +19,43 @@
           document.getElementById('content').textContent = 'Missing invitation token.';
           return;
         }
-        const preview = await fetch(`/api/invite/${token}`).then((r) => r.json());
+        const preview = await fetch(`/api/invite/${token}`).then((r) => {
+          if (!r.ok) throw new Error('bad');
+          return r.json();
+        });
         document.getElementById('content').innerHTML = `
           <div class="card">
             <p>You are invited as <strong>${preview.expectedName || 'a new user'}</strong>.</p>
             <p>Expires: ${formatDateTime(preview.expiresAt)}</p>
-            <p><a class="btn" href="/app/login.html">Sign in to accept</a></p>
-            <button id="acceptBtn" type="button">Accept invitation</button>
+            <form id="registerForm">
+              <div class="field">
+                <label for="email">Email</label>
+                <input id="email" type="email" autocomplete="username" required />
+              </div>
+              <div class="field">
+                <label for="displayName">Display name</label>
+                <input id="displayName" type="text" value="${preview.expectedName || ''}" />
+              </div>
+              <div class="field">
+                <label for="password">Password (min 8 characters)</label>
+                <input id="password" type="password" autocomplete="new-password" minlength="8" required />
+              </div>
+              <button type="submit">Create account</button>
+            </form>
             <p id="msg"></p>
           </div>`;
-        document.getElementById('acceptBtn').addEventListener('click', async () => {
+        document.getElementById('registerForm').addEventListener('submit', async (event) => {
+          event.preventDefault();
           try {
-            await api(`/api/invite/${token}/accept`, { method: 'POST', body: '{}' });
-            document.getElementById('msg').textContent = 'Invitation accepted. Redirecting…';
+            await api(`/api/invite/${token}/accept`, {
+              method: 'POST',
+              body: JSON.stringify({
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value,
+                displayName: document.getElementById('displayName').value,
+              }),
+            });
+            document.getElementById('msg').textContent = 'Account created. Redirecting…';
             document.getElementById('msg').className = 'success';
             setTimeout(() => { window.location.href = '/app/dashboard.html'; }, 800);
           } catch (e) {

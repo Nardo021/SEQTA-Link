@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Calendar · SEQTA Calendar</title>
+    <title>Calendar · Seqta Link</title>
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
@@ -21,16 +21,32 @@
         document.getElementById('content').innerHTML = `
           <div class="card">
             <p><strong>${cal.name}</strong> (${cal.timezone})</p>
-            <p>Token prefix: <span class="mono">${cal.tokenPrefix || '—'}</span></p>
             <p>Feed status: ${cal.feedEnabled ? 'Enabled' : 'Disabled'}</p>
+            <p>Token prefix: <span class="mono">${cal.tokenPrefix || '—'}</span></p>
+            <p>Path hint: <span class="mono">${cal.subscriptionPath || '—'}</span></p>
             <p>Last synced: ${formatDateTime(cal.lastSyncedAt)}</p>
-            <button id="rotateBtn" type="button">Rotate calendar token</button>
+            <p>The full subscription URL is only shown once when you generate or rotate the token. Copy it into Apple/Google Calendar immediately.</p>
+            <button id="rotateBtn" type="button">${cal.tokenPrefix ? 'Rotate calendar token' : 'Generate subscription URL'}</button>
             <pre id="rotateOut" class="mono"></pre>
+          </div>
+          <div class="card">
+            <h2>Client setup</h2>
+            <ul>
+              <li><a href="/help/apple.html" target="_blank">Apple Calendar</a> — subscribe with the HTTPS ICS URL.</li>
+              <li><a href="/help/google.html" target="_blank">Google Calendar / Android</a> — add From URL on desktop first, then enable Sync in the Android app.</li>
+            </ul>
+            <p class="muted">
+              SEQTA sync updates this feed immediately. Apple and Google refresh on their own schedule
+              and may take extra time to show changes.
+            </p>
           </div>`;
         document.getElementById('rotateBtn').addEventListener('click', async () => {
+          if (cal.tokenPrefix && !confirm('Rotate now? Existing calendar subscriptions will stop working until you re-add the new URL.')) {
+            return;
+          }
           const result = await api('/api/me/calendar/rotate-token', { method: 'POST', body: '{}' });
           document.getElementById('rotateOut').textContent =
-            `New subscription URL:\n${result.calendarUrl}\n\nCopy this into Apple/Google Calendar. Previous links stop working immediately.`;
+            `Subscription URL (copy now):\n${result.calendarUrl}\n\nPrevious links stop working immediately.`;
         });
       }
       main().catch((err) => {

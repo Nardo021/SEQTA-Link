@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createTestApp, baseSyncPayload } from "../helpers/test-app.js";
-import { createCalendarService } from "../../src/cli/db.js";
+import { createTestFeed } from "../../src/cli/db.js";
 import { queryOne } from "../helpers/db-query.js";
 
 describe("sync integration", () => {
@@ -10,7 +10,7 @@ describe("sync integration", () => {
     db: Awaited<ReturnType<typeof createTestApp>>["db"],
     config: Awaited<ReturnType<typeof createTestApp>>["config"],
   ) {
-    return createCalendarService(db.cli, config).createCalendar({
+    return createTestFeed(db.cli, config, {
         name: "Sync Test Feed",
         schoolHost: "learn.masada.onseqtacloud.com",
         studentRef: "4284",
@@ -33,7 +33,7 @@ describe("sync integration", () => {
   ) {
     return queryOne<T>(
       db,
-      `SELECT ${columns} FROM events WHERE calendar_id = $1 LIMIT 1`,
+      `SELECT ${columns} FROM events WHERE calendar_id = $1 ORDER BY updated_at DESC, id DESC LIMIT 1`,
       [calendarId],
     );
   }

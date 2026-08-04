@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDbClient, type AppDatabase } from '../../src/db/client.js';
 import { wrapDbAsAppDatabase } from '../../src/db/app-database.js';
+import { MIGRATION_FILES } from '../../src/db/migrate.js';
 import type { Pool } from 'pg';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -13,6 +14,13 @@ const TEST_FUNCTIONS_SQL = join(__dirname, '../../database/test-functions.sql');
 
 let memDb: IMemoryDb | null = null;
 
+/**
+ * In-memory schema DB for unit/integration smoke tests.
+ * pg-mem cannot run CREATE ROLE / FORCE RLS — those require real Postgres
+ * (see test/integration/rls-roles.test.ts). Schema files applied here:
+ * 001 + 005 + 006. Remaining migration versions (roles/grants/etc.) are
+ * recorded only so isMigrationComplete() matches production for health checks.
+ */
 export function createTestDb(): { db: AppDatabase; pool: Pool; reset: () => Promise<void> } {
   memDb = newDb({ autoCreateForeignKeyIndices: true });
 
@@ -29,8 +37,8 @@ export function createTestDb(): { db: AppDatabase; pool: Pool; reset: () => Prom
     implementation: () => new Date(),
   });
 
-  const migrationFiles = ['001_v2_schema.sql'];
-  for (const file of migrationFiles) {
+  const schemaFiles = ['001_v2_schema.sql', '005_local_auth.sql', '006_email_identity.sql'];
+  for (const file of schemaFiles) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8').replace(
       /CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/gi,
       '',
@@ -38,11 +46,9 @@ export function createTestDb(): { db: AppDatabase; pool: Pool; reset: () => Prom
     memDb.public.none(sql);
   }
 
+  const values = MIGRATION_FILES.map((file) => `('${file}')`).join(', ');
   memDb.public.none(`
-    INSERT INTO schema_migrations (version) VALUES
-      ('001_v2_schema.sql'),
-      ('002_rls_policies.sql'),
-      ('003_db_roles.sql')
+    INSERT INTO schema_migrations (version) VALUES ${values}
     ON CONFLICT DO NOTHING;
   `);
 
@@ -59,11 +65,4 @@ export function createTestDb(): { db: AppDatabase; pool: Pool; reset: () => Prom
       await db.close();
     },
   };
-}
-
-export async function applyTestMigrations(db: AppDatabase): Promise<void> {
-  await db.exec(`
-    INSERT INTO schema_migrations (version) VALUES ('001_v2_schema.sql'), ('002_rls_policies.sql'), ('003_db_roles.sql')
-    ON CONFLICT DO NOTHING
-  `);
 }

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Sync history · SEQTA Calendar</title>
+    <title>Sync history · Seqta Link</title>
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
@@ -14,6 +14,12 @@
     </div>
     <script src="/js/api.js"></script>
     <script>
+      function formatDuration(ms) {
+        if (ms == null) return '—';
+        if (ms < 1000) return `${ms} ms`;
+        return `${(ms / 1000).toFixed(1)} s`;
+      }
+
       async function main() {
         document.getElementById('nav').innerHTML = renderNav('sync-history.html');
         await requireAuth();
@@ -24,15 +30,21 @@
         }
         document.getElementById('content').innerHTML = `
           <div class="card"><table>
-            <thead><tr><th>Started</th><th>Status</th><th>Received</th><th>Inserted</th><th>Updated</th><th>Removed</th></tr></thead>
+            <thead><tr>
+              <th>Started</th><th>Device</th><th>Status</th><th>Received</th>
+              <th>Inserted</th><th>Updated</th><th>Removed</th><th>Error</th><th>Duration</th>
+            </tr></thead>
             <tbody>${data.runs.map((r) => `
               <tr>
                 <td>${formatDateTime(r.startedAt)}</td>
+                <td>${r.deviceName || r.deviceId?.slice(0, 8) || '—'}</td>
                 <td>${r.status}</td>
                 <td>${r.receivedCount}</td>
                 <td>${r.insertedCount}</td>
                 <td>${r.updatedCount}</td>
                 <td>${r.removedCount}</td>
+                <td class="mono">${r.errorCode || '—'}</td>
+                <td>${formatDuration(r.durationMs)}</td>
               </tr>`).join('')}</tbody>
           </table></div>`;
       }

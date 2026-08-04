@@ -1,5 +1,5 @@
 [Unit]
-Description=SEQTA Calendar SQLite Backup
+Description=Seqta Link Backup
 After=seqta-calendar.service
 
 [Service]

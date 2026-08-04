@@ -1,6 +1,14 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { AppError } from '../shared/errors.js';
 
+function retryAfterSecFromDetails(details: unknown): number {
+  const value =
+    details && typeof details === 'object' && 'retryAfterSec' in details
+      ? Number((details as { retryAfterSec: unknown }).retryAfterSec)
+      : NaN;
+  return Number.isFinite(value) && value > 0 ? Math.ceil(value) : 60;
+}
+
 export function registerErrorHandler(app: {
   setErrorHandler: (
     handler: (error: FastifyError, request: FastifyRequest, reply: FastifyReply) => void,
@@ -11,6 +19,9 @@ export function registerErrorHandler(app: {
     const requestId = request.requestId;
 
     if (error instanceof AppError) {
+      if (error.statusCode === 429) {
+        reply.header('Retry-After', String(retryAfterSecFromDetails(error.details)));
+      }
       reply.status(error.statusCode).send({
         error: {
           code: error.code,
@@ -28,6 +39,20 @@ export function registerErrorHandler(app: {
           code: 'INVALID_REQUEST',
           message: error.message,
           requestId,
+        },
+      });
+      return;
+    }
+
+    if (error.statusCode === 429) {
+      const retryAfterSec = Number(reply.getHeader('retry-after')) || 60;
+      reply.header('Retry-After', String(retryAfterSec));
+      reply.status(429).send({
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many requests. Please try again later.',
+          requestId,
+          details: { retryAfterSec },
         },
       });
       return;

@@ -7,11 +7,12 @@ import { registerErrorHandler } from './plugins/error-handler.js';
 import databasePlugin from './plugins/database.js';
 import servicesPlugin from './plugins/services.js';
 import authenticationPlugin from './plugins/authentication.js';
+import bruteForcePlugin from './plugins/brute-force.js';
 import requestContextPlugin from './plugins/request-context.js';
 import securityHeadersPlugin from './plugins/security-headers.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 import { syncRoutes } from './modules/sync/sync.routes.js';
-import { calendarRoutes } from './modules/calendar/calendar.routes.js';
+import { calendarRoutes } from './modules/calendars/feed.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { deviceRoutes } from './modules/devices/device.routes.js';
 import { meRoutes } from './modules/me/me.routes.js';
@@ -61,6 +62,7 @@ export async function buildApp(config: AppConfig, options: BuildAppOptions = {})
     await app.register(databasePlugin);
   }
   await app.register(servicesPlugin);
+  await app.register(bruteForcePlugin);
   await app.register(authenticationPlugin);
 
   await app.register(cookie);

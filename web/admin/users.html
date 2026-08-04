@@ -10,31 +10,59 @@
     <div class="layout">
       <div id="nav"></div>
       <h1>Users</h1>
+      <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">
+        <div class="field" style="margin:0;flex:1;min-width:180px">
+          <label for="search">Search</label>
+          <input id="search" placeholder="Name or email" />
+        </div>
+        <div class="field" style="margin:0;min-width:140px">
+          <label for="status">Status</label>
+          <select id="status">
+            <option value="">All</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+          </select>
+        </div>
+      </div>
       <div id="content">Loading…</div>
     </div>
     <script src="/js/api.js"></script>
-    <script src="/js/admin-api.js"></script>
     <script>
-      async function loadUsers() {
-        const data = await adminApi('/api/admin/users');
+      let allUsers = [];
+
+      function render() {
+        const q = document.getElementById('search').value.trim().toLowerCase();
+        const status = document.getElementById('status').value;
+        const users = allUsers.filter((u) => {
+          if (status && u.accountStatus !== status) return false;
+          if (!q) return true;
+          return (u.displayName || '').toLowerCase().includes(q)
+            || (u.email || '').toLowerCase().includes(q);
+        });
         document.getElementById('content').innerHTML = `
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>Status</th><th>Sync</th><th>Feed</th><th>Role</th><th></th></tr></thead>
-            <tbody>${data.users.map((u) => `
+            <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Sync</th><th>Feed</th><th>Role</th><th></th></tr></thead>
+            <tbody>${users.map((u) => `
               <tr>
                 <td>${u.displayName}</td>
+                <td class="mono">${u.email || '—'}</td>
                 <td>${u.accountStatus}</td>
                 <td>${u.syncEnabled ? 'on' : 'off'}</td>
                 <td>${u.feedEnabled ? 'on' : 'off'}</td>
                 <td>${u.role}</td>
                 <td><a href="/admin/user.html?id=${u.id}">Manage</a></td>
-              </tr>`).join('')}</tbody>
+              </tr>`).join('') || '<tr><td colspan="7">No matching users.</td></tr>'}</tbody>
           </table></div>`;
       }
+
       async function main() {
         document.getElementById('nav').innerHTML = renderAdminNav('users.html');
         if (!(await requireAdmin())) return;
-        await loadUsers();
+        const data = await adminApi('/api/admin/users');
+        allUsers = data.users;
+        document.getElementById('search').addEventListener('input', render);
+        document.getElementById('status').addEventListener('change', render);
+        render();
       }
       main().catch((e) => { document.getElementById('content').textContent = e.message; });
     </script>

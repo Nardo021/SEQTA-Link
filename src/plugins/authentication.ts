@@ -2,8 +2,10 @@ import fp from 'fastify-plugin';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { resolveUploadTokenContext } from '../db/token-resolve.js';
 import { AuthService, readSessionToken } from '../modules/auth/auth.service.js';
+import { ensureOwnerBootstrapFromConfig } from '../modules/auth/owner-bootstrap.js';
 import { AppError } from '../shared/errors.js';
-import type { UserRecord } from '../shared/types.js';
+import type { TokenType, UserRecord } from '../shared/types.js';
+import { withBruteForce, isAuthFailure } from '../security/with-brute-force.js';
 
 const authenticationPlugin: FastifyPluginAsync = async (app) => {
   app.decorateRequest('syncContext', undefined);
@@ -15,6 +17,15 @@ const authenticationPlugin: FastifyPluginAsync = async (app) => {
   const authService = new AuthService(app.db.user, app.config, app.tokenService);
   app.decorate('authService', authService);
 
+  const owner = await ensureOwnerBootstrapFromConfig(
+    app.db.cli,
+    app.config,
+    app.tokenService,
+  );
+  if (owner) {
+    app.log.info({ event: 'owner_bootstrap_ensured', email: owner.email, userId: owner.id });
+  }
+
   async function requireSessionUser(request: FastifyRequest): Promise<UserRecord> {
     const token = readSessionToken(request.headers.cookie, authService.getSessionCookieName());
     const user = await authService.validateSessionToken(token);
@@ -25,36 +36,32 @@ const authenticationPlugin: FastifyPluginAsync = async (app) => {
   }
 
   app.decorate(
-    'authenticateUpload',
+    'authenticateSyncToken',
     async (request: FastifyRequest): Promise<void> => {
-      const { rawToken } = app.tokenService.parseUploadBearerToken(request.headers.authorization);
-      const hash = app.tokenService.hash('upload', rawToken);
-      const syncContext = await resolveUploadTokenContext(app.db.device, hash, {
-        requireSyncEnabled: true,
-      });
+      await withBruteForce(
+        app.bruteForce,
+        app.bruteForcePolicies.apiAuth,
+        [{ scope: 'sync-auth-ip', key: request.ip }],
+        {
+          shouldRecordFailure: isAuthFailure,
+          run: async () => {
+            const { rawToken, type } = app.tokenService.parseBearerToken(
+              request.headers.authorization,
+              ['upload', 'device'],
+            );
+            const purpose: 'upload' | 'device' = type === 'device' ? 'device' : 'upload';
+            const hash = app.tokenService.hash(purpose, rawToken);
+            const syncContext = await resolveUploadTokenContext(app.db.device, hash, {
+              requireSyncEnabled: true,
+            });
 
-      request.rawToken = rawToken;
-      request.tokenType = 'upload';
-      request.syncContext = syncContext;
-      request.calendar = syncContext.calendar;
-      request.feed = syncContext.calendar;
-    },
-  );
-
-  app.decorate(
-    'authenticateDevice',
-    async (request: FastifyRequest): Promise<void> => {
-      const { rawToken } = app.tokenService.parseDeviceBearerToken(request.headers.authorization);
-      const hash = app.tokenService.hash('device', rawToken);
-      const syncContext = await resolveUploadTokenContext(app.db.device, hash, {
-        requireSyncEnabled: true,
-      });
-
-      request.rawToken = rawToken;
-      request.tokenType = 'device';
-      request.syncContext = syncContext;
-      request.calendar = syncContext.calendar;
-      request.feed = syncContext.calendar;
+            request.rawToken = rawToken;
+            request.tokenType = type as TokenType;
+            request.syncContext = syncContext;
+            request.calendar = syncContext.calendar;
+          },
+        },
+      );
     },
   );
 
@@ -79,8 +86,7 @@ const authenticationPlugin: FastifyPluginAsync = async (app) => {
 
 declare module 'fastify' {
   interface FastifyInstance {
-    authenticateUpload: (request: FastifyRequest) => Promise<void>;
-    authenticateDevice: (request: FastifyRequest) => Promise<void>;
+    authenticateSyncToken: (request: FastifyRequest) => Promise<void>;
     authenticateSession: (request: FastifyRequest) => Promise<void>;
     authenticateAdmin: (request: FastifyRequest) => Promise<void>;
     authService: AuthService;
@@ -88,11 +94,11 @@ declare module 'fastify' {
 
   interface FastifyRequest {
     user?: UserRecord;
-    tokenType?: 'upload' | 'calendar' | 'device';
+    tokenType?: TokenType;
   }
 }
 
 export default fp(authenticationPlugin, {
   name: 'authentication',
-  dependencies: ['services'],
+  dependencies: ['services', 'brute-force'],
 });

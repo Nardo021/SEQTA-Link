@@ -87,4 +87,5 @@ input, select {
 .field label { display: block; font-weight: 600; margin-bottom: 4px; }
 .error { color: var(--danger); }
 .success { color: var(--success); }
+.muted { color: var(--muted); font-size: 14px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

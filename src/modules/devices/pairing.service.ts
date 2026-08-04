@@ -4,81 +4,16 @@ import { resolvePairingCodeRow } from '../../db/token-resolve.js';
 import { generatePairingCode, normalizePairingCode } from '../../shared/crypto.js';
 import { nowIso } from '../../shared/dates.js';
 import { AppError } from '../../shared/errors.js';
-import type { TokenService } from '../feeds/token.service.js';
-import { DeviceRepository } from '../calendars/device.repository.js';
+import type { TokenService } from '../../security/token.service.js';
+import { DeviceRepository } from './device.repository.js';
 import type { UserRecord } from '../../shared/types.js';
-import { UserRepository } from '../users/user.repository.js';
-
-export interface PairingCodeRecord {
-  id: string;
-  ownerUserId: string;
-  calendarId: string;
-  expiresAt: string;
-}
-
-export class PairingRepository {
-  constructor(private readonly db: DbClient) {}
-
-  async createPairingCode(input: {
-    id: string;
-    ownerUserId: string;
-    calendarId: string;
-    codeHash: string;
-    expiresAt: string;
-    now: string;
-  }): Promise<void> {
-    await this.db.exec(
-      `INSERT INTO pairing_codes (id, owner_user_id, calendar_id, code_hash, expires_at, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        input.id,
-        input.ownerUserId,
-        input.calendarId,
-        input.codeHash,
-        input.expiresAt,
-        input.now,
-      ],
-    );
-  }
-
-  async findActiveByHash(codeHash: string): Promise<PairingCodeRecord | null> {
-    const row = await this.db.queryOne<{
-      id: string;
-      owner_user_id: string;
-      calendar_id: string;
-      expires_at: string;
-      used_at: string | null;
-    }>(
-      `SELECT id, owner_user_id, calendar_id, expires_at, used_at
-       FROM pairing_codes
-       WHERE code_hash = $1`,
-      [codeHash],
-    );
-    if (!row || row.used_at) {
-      return null;
-    }
-    return {
-      id: row.id,
-      ownerUserId: row.owner_user_id,
-      calendarId: row.calendar_id,
-      expiresAt: row.expires_at,
-    };
-  }
-
-  async markUsed(pairingCodeId: string, deviceId: string, now: string): Promise<void> {
-    await this.db.exec(
-      `UPDATE pairing_codes SET used_at = $2, device_id = $3 WHERE id = $1`,
-      [pairingCodeId, now, deviceId],
-    );
-  }
-}
+import { PairingRepository } from './pairing.repository.js';
 
 export class PairingService {
   constructor(
     private readonly db: DbClient,
     private readonly pairingRepo: PairingRepository,
     private readonly deviceRepo: DeviceRepository,
-    private readonly userRepo: UserRepository,
     private readonly tokenService: TokenService,
   ) {}
 
@@ -86,7 +21,23 @@ export class PairingService {
     return this.tokenService.hash('device', `pair:${normalizePairingCode(rawCode)}`);
   }
 
-  async createPairingCode(user: UserRecord, calendarId: string): Promise<{ code: string; expiresAt: string }> {
+  async listPendingCodes(
+    user: UserRecord,
+  ): Promise<Array<{ id: string; expiresAt: string; createdAt: string }>> {
+    return this.pairingRepo.listPendingByOwner(user.id);
+  }
+
+  async revokePendingCode(user: UserRecord, pairingCodeId: string): Promise<void> {
+    const cancelled = await this.pairingRepo.cancelPending(user.id, pairingCodeId);
+    if (!cancelled) {
+      throw new AppError('INVALID_REQUEST', 'Pairing code not found.', 404);
+    }
+  }
+
+  async createPairingCode(
+    user: UserRecord,
+    calendarId: string,
+  ): Promise<{ code: string; expiresAt: string }> {
     if (user.accountStatus !== 'active') {
       throw new AppError('ACCOUNT_SUSPENDED', 'Account is not active.', 403);
     }
@@ -132,6 +83,9 @@ export class PairingService {
     }
     if (pairing.accountStatus !== 'active') {
       throw new AppError('PAIRING_CODE_INVALID', 'Invalid pairing code.', 400);
+    }
+    if (!pairing.syncEnabled) {
+      throw new AppError('SYNC_DISABLED', 'Sync is disabled for this account.', 403);
     }
 
     const deviceToken = this.tokenService.generateDeviceToken();

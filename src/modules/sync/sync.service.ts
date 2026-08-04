@@ -1,15 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { AppConfig } from '../../config.js';
 import type { DbClient } from '../../db/client.js';
-import { runTransaction } from '../../db/transaction.js';
 import { sha256Hex } from '../../shared/crypto.js';
 import { AppError } from '../../shared/errors.js';
 import type { SyncContext, SyncSuccessResponse } from '../../shared/types.js';
 import { getFeedMutex } from '../../shared/mutex.js';
 import { EventRepository } from '../events/event.repository.js';
 import { CalendarRepository } from '../calendars/calendar.repository.js';
-import { DeviceRepository } from '../calendars/device.repository.js';
-import { createSyncServiceDeps } from '../../services/scoped-services.js';
+import { DeviceRepository } from '../devices/device.repository.js';
+import { createSyncServiceDeps } from '../../services/service-factories.js';
 import { SourceIdentityRepository } from '../source-identities/source-identity.repository.js';
 import {
   normalizeCoverage,
@@ -93,7 +92,7 @@ export class SyncService {
 
     const mutex = getFeedMutex(context.calendar.id);
     const mutexResult = await mutex.runExclusive(async () =>
-      runTransaction(this.db, async (tx) =>
+      this.db.transaction(async (tx) =>
         runSyncTransaction(createSyncServiceDeps(tx), this.config, {
           context,
           idempotencyKey,

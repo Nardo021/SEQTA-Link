@@ -1,29 +1,31 @@
-import type { AppConfig } from '../../config.js';
-import { detectTokenType, generateRawToken, hashToken } from '../../shared/crypto.js';
-import type { TokenType } from '../../shared/types.js';
-import { AppError } from '../../shared/errors.js';
+import type { AppConfig } from '../config.js';
+import {
+  detectTokenType,
+  generateRawToken,
+  hashInviteToken,
+  hashToken,
+} from '../shared/crypto.js';
+import type { SecretHashPurpose, TokenType } from '../shared/types.js';
+import { AppError } from '../shared/errors.js';
 
 export class TokenService {
   constructor(private readonly tokenPepper: Buffer) {}
-
-  generateTokenPair(): { uploadToken: string; calendarToken: string } {
-    return {
-      uploadToken: generateRawToken('upload'),
-      calendarToken: generateRawToken('calendar'),
-    };
-  }
 
   generateDeviceToken(): string {
     return generateRawToken('device');
   }
 
-  hash(type: TokenType, rawToken: string): string {
-    return hashToken(this.tokenPepper, type, rawToken);
+  hash(purpose: SecretHashPurpose, rawToken: string): string {
+    return hashToken(this.tokenPepper, purpose, rawToken);
+  }
+
+  hashInvite(rawToken: string): string {
+    return hashInviteToken(this.tokenPepper, rawToken);
   }
 
   parseBearerToken(
     authorizationHeader: string | undefined,
-    allowedTypes: TokenType[] = ['upload'],
+    allowedTypes: TokenType[] = ['upload', 'device'],
   ): { rawToken: string; type: TokenType } {
     if (!authorizationHeader?.startsWith('Bearer ')) {
       throw new AppError('INVALID_TOKEN', 'Missing or invalid Authorization header.', 401);
@@ -34,14 +36,6 @@ export class TokenService {
       throw new AppError('INVALID_TOKEN', 'Invalid token format.', 401);
     }
     return { rawToken, type };
-  }
-
-  parseUploadBearerToken(authorizationHeader: string | undefined): { rawToken: string; type: TokenType } {
-    return this.parseBearerToken(authorizationHeader, ['upload']);
-  }
-
-  parseDeviceBearerToken(authorizationHeader: string | undefined): { rawToken: string; type: TokenType } {
-    return this.parseBearerToken(authorizationHeader, ['device']);
   }
 
   parseCalendarTokenFromPath(tokenParam: string): { rawToken: string; type: TokenType } {

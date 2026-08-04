@@ -3,10 +3,9 @@ import type { UserRecord } from '../../shared/types.js';
 
 interface UserRow {
   id: string;
-  oidc_issuer: string;
-  oidc_subject: string;
   display_name: string;
   email: string | null;
+  password_hash: string | null;
   role: 'owner' | 'admin' | 'user';
   account_status: 'active' | 'suspended' | 'deleted';
   sync_enabled: boolean;
@@ -19,8 +18,6 @@ interface UserRow {
 function mapUserRow(row: UserRow): UserRecord {
   return {
     id: row.id,
-    oidcIssuer: row.oidc_issuer,
-    oidcSubject: row.oidc_subject,
     displayName: row.display_name,
     email: row.email,
     role: row.role,
@@ -41,34 +38,55 @@ export class UserRepository {
     return row ? mapUserRow(row) : null;
   }
 
-  async findByOidc(issuer: string, subject: string): Promise<UserRecord | null> {
+  async findByEmail(email: string): Promise<UserRecord | null> {
     const row = await this.db.queryOne<UserRow>(
-      'SELECT * FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2',
-      [issuer, subject],
+      'SELECT * FROM users WHERE lower(email) = lower($1)',
+      [email],
     );
     return row ? mapUserRow(row) : null;
   }
 
+  async countOwners(): Promise<number> {
+    const row = await this.db.queryOne<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM users
+       WHERE role = 'owner' AND account_status = 'active'`,
+    );
+    return Number(row?.n ?? 0);
+  }
+
+  async getPasswordHash(userId: string): Promise<string | null> {
+    const row = await this.db.queryOne<{ password_hash: string | null }>(
+      'SELECT password_hash FROM users WHERE id = $1',
+      [userId],
+    );
+    return row?.password_hash ?? null;
+  }
+
   async createUser(input: {
     id: string;
-    oidcIssuer: string;
-    oidcSubject: string;
     displayName: string;
     email?: string | null;
+    passwordHash?: string | null;
     role?: UserRecord['role'];
+    syncEnabled?: boolean;
+    feedEnabled?: boolean;
+    maxDevices?: number;
     now: string;
   }): Promise<UserRecord> {
     await this.db.exec(
       `INSERT INTO users (
-        id, oidc_issuer, oidc_subject, display_name, email, role, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
+        id, display_name, email, password_hash,
+        role, sync_enabled, feed_enabled, max_devices, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
       [
         input.id,
-        input.oidcIssuer,
-        input.oidcSubject,
         input.displayName,
         input.email ?? null,
+        input.passwordHash ?? null,
         input.role ?? 'user',
+        input.syncEnabled ?? true,
+        input.feedEnabled ?? true,
+        input.maxDevices ?? 3,
         input.now,
       ],
     );
@@ -86,10 +104,27 @@ export class UserRepository {
     return rows.map(mapUserRow);
   }
 
+  async countByAccountStatus(): Promise<{ total: number; active: number; suspended: number }> {
+    const row = await this.db.queryOne<{ total: string; active: string; suspended: string }>(
+      `SELECT
+         COUNT(*)::text AS total,
+         COUNT(*) FILTER (WHERE account_status = 'active')::text AS active,
+         COUNT(*) FILTER (WHERE account_status = 'suspended')::text AS suspended
+       FROM users`,
+    );
+    return {
+      total: Number(row?.total ?? 0),
+      active: Number(row?.active ?? 0),
+      suspended: Number(row?.suspended ?? 0),
+    };
+  }
+
   async updateUser(
     userId: string,
     fields: Partial<{
       displayName: string;
+      email: string | null;
+      passwordHash: string | null;
       syncEnabled: boolean;
       feedEnabled: boolean;
       maxDevices: number;
@@ -105,6 +140,14 @@ export class UserRepository {
     if (fields.displayName !== undefined) {
       sets.push(`display_name = $${idx++}`);
       params.push(fields.displayName);
+    }
+    if (fields.email !== undefined) {
+      sets.push(`email = $${idx++}`);
+      params.push(fields.email);
+    }
+    if (fields.passwordHash !== undefined) {
+      sets.push(`password_hash = $${idx++}`);
+      params.push(fields.passwordHash);
     }
     if (fields.syncEnabled !== undefined) {
       sets.push(`sync_enabled = $${idx++}`);

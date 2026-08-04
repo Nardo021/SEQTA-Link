@@ -1,11 +1,13 @@
 import fp from 'fastify-plugin';
 import type { FastifyPluginAsync } from 'fastify';
 import { createDbClient, createPool, ensureRoleGrants } from '../db/client.js';
-import { attachRoleClients } from '../db/app-database.js';
+import { createAppDatabase } from '../db/app-database.js';
 import { applyMigrations } from '../db/migrate.js';
+import { prepareDatabaseConnection } from '../db/prepare-database.js';
 
 const databasePlugin: FastifyPluginAsync = async (app) => {
-  const pool = await createPool(app.config.databaseUrl);
+  const prepared = await prepareDatabaseConnection(app.config, app.log);
+  const pool = await createPool(prepared.databaseUrl);
   const bootstrap = createDbClient(pool);
 
   const applied = await applyMigrations(bootstrap);
@@ -14,12 +16,12 @@ const databasePlugin: FastifyPluginAsync = async (app) => {
   }
   await ensureRoleGrants(bootstrap);
 
-  const device = createDbClient(pool, 'seqta_device_api');
-  const db = attachRoleClients(pool, device);
+  const db = createAppDatabase(pool);
   app.decorate('db', db);
 
   app.addHook('onClose', async () => {
     await pool.end();
+    await prepared.stop();
   });
 };
 

@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { AppError } from '../../shared/errors.js';
-import { registerSyncEndpoints } from '../sync/sync-handlers.js';
-import { createScopedServices } from '../../services/scoped-services.js';
+import { withBruteForce } from '../../security/with-brute-force.js';
+import { createPairingService } from '../../services/service-factories.js';
 
 export const deviceRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Body: { code?: string; deviceName?: string } }>(
@@ -9,7 +9,7 @@ export const deviceRoutes: FastifyPluginAsync = async (app) => {
     {
       config: {
         rateLimit: {
-          max: 20,
+          max: 10,
           timeWindow: '10 minutes',
         },
       },
@@ -19,18 +19,21 @@ export const deviceRoutes: FastifyPluginAsync = async (app) => {
       if (!code) {
         throw new AppError('INVALID_REQUEST', 'Pairing code is required.', 400);
       }
-      const { pairing } = createScopedServices(app.db.device, app.config, app.tokenService);
-      return pairing.pairDevice({
-        rawCode: code,
-        deviceName: request.body?.deviceName?.trim() || 'Browser',
-      });
+      return withBruteForce(
+        app.bruteForce,
+        app.bruteForcePolicies.apiAuth,
+        [{ scope: 'pair-ip', key: request.ip }],
+        {
+          shouldRecordFailure: (error) =>
+            error instanceof AppError &&
+            (error.code === 'PAIRING_CODE_INVALID' || error.code === 'PAIRING_CODE_EXPIRED'),
+          run: () =>
+            createPairingService(app.db.device, app.tokenService).pairDevice({
+              rawCode: code,
+              deviceName: request.body?.deviceName?.trim() || 'Browser',
+            }),
+        },
+      );
     },
   );
-
-  registerSyncEndpoints(app, {
-    statusPath: '/api/device/status',
-    syncPath: '/api/device/sync',
-    preHandler: app.authenticateDevice,
-    rateLimitKey: (request) => request.syncContext?.device.id ?? request.ip,
-  });
 };

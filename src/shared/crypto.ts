@@ -1,5 +1,5 @@
 import { createHmac, createHash, randomBytes } from 'node:crypto';
-import type { TokenType } from './types.js';
+import type { SecretHashPurpose, TokenType } from './types.js';
 
 const UPLOAD_PREFIX = 'scu_';
 const CALENDAR_PREFIX = 'scc_';
@@ -9,12 +9,22 @@ const PAIRING_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ICAL_UID_DOMAIN = 'timetable.leoze.top';
 
 export function generateRawToken(type: TokenType): string {
-  const prefix =
-    type === 'upload'
-      ? UPLOAD_PREFIX
-      : type === 'calendar'
-        ? CALENDAR_PREFIX
-        : DEVICE_PREFIX;
+  let prefix: string;
+  switch (type) {
+    case 'upload':
+      prefix = UPLOAD_PREFIX;
+      break;
+    case 'calendar':
+      prefix = CALENDAR_PREFIX;
+      break;
+    case 'device':
+      prefix = DEVICE_PREFIX;
+      break;
+    default: {
+      const _exhaustive: never = type;
+      throw new Error(`Unsupported token type: ${String(_exhaustive)}`);
+    }
+  }
   const randomPart = randomBytes(TOKEN_RANDOM_BYTES).toString('base64url');
   return `${prefix}${randomPart}`;
 }
@@ -31,10 +41,18 @@ export function normalizePairingCode(code: string): string {
   return code.replace(/-/g, '').toUpperCase();
 }
 
-export function hashToken(tokenPepper: Buffer, type: TokenType, rawToken: string): string {
+export function hashToken(
+  tokenPepper: Buffer,
+  purpose: SecretHashPurpose,
+  rawToken: string,
+): string {
   return createHmac('sha256', tokenPepper)
-    .update(`${type}:${rawToken}`)
+    .update(`${purpose}:${rawToken}`)
     .digest('hex');
+}
+
+export function hashInviteToken(tokenPepper: Buffer, rawToken: string): string {
+  return hashToken(tokenPepper, 'invite', rawToken);
 }
 
 export function detectTokenType(rawToken: string): TokenType | null {

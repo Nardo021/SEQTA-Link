@@ -1,42 +1,65 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { randomBytes } from 'node:crypto';
-import { readSessionToken } from './auth.service.js';
-import { createPkcePair } from './oidc.client.js';
 import { AppError } from '../../shared/errors.js';
+import { isUnauthorizedStatus, withBruteForce } from '../../security/with-brute-force.js';
 import type { UserRecord } from '../../shared/types.js';
-
-const pendingPkce = new Map<string, { verifier: string; expiresAt: number }>();
+import { readSessionToken } from './auth.service.js';
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/auth/login', async (request, reply) => {
-    if (app.authService.isOidcEnabled()) {
-      const state = randomBytes(16).toString('base64url');
-      const pkce = createPkcePair();
-      pendingPkce.set(state, { verifier: pkce.verifier, expiresAt: Date.now() + 10 * 60 * 1000 });
-      const url = app.authService.getLoginRedirectUrl(state, pkce.challenge);
-      return reply.redirect(url);
-    }
+  const loginWindow = `${app.config.authLoginWindowMinutes} minutes`;
+  const failureDelayMs = app.config.nodeEnv === 'test' ? 0 : 250;
+
+  app.get('/auth/login', async (_request, reply) => {
     return reply.redirect('/app/login.html');
   });
 
-  app.get('/auth/oidc/callback', async (request, reply) => {
-    const query = request.query as { code?: string; state?: string };
-    if (!query.code || !query.state) {
-      throw new AppError('INVALID_REQUEST', 'Missing OIDC callback parameters.', 400);
-    }
-    const pending = pendingPkce.get(query.state);
-    pendingPkce.delete(query.state);
-    if (!pending || pending.expiresAt < Date.now()) {
-      throw new AppError('INVALID_REQUEST', 'OIDC state expired.', 400);
-    }
-    const { sessionToken } = await app.authService.handleOidcCallback(query.code, pending.verifier);
-    reply.setCookie(
-      app.authService.getSessionCookieName(),
-      sessionToken,
-      app.authService.getSessionCookieOptions(),
-    );
-    return reply.redirect('/app/dashboard.html');
-  });
+  app.post<{ Body: { email?: string; password?: string } }>(
+    '/auth/login',
+    {
+      config: {
+        rateLimit: {
+          max: app.config.authLoginRateLimitMax,
+          timeWindow: loginWindow,
+        },
+      },
+    },
+    async (request, reply) => {
+      const email = request.body?.email?.trim() ?? '';
+      const password = request.body?.password ?? '';
+
+      const { sessionToken, user } = await withBruteForce(
+        app.bruteForce,
+        app.bruteForcePolicies.login,
+        [
+          { scope: 'login-ip', key: request.ip },
+          { scope: 'login-email', key: email },
+        ],
+        {
+          delayOnFailureMs: failureDelayMs,
+          shouldRecordFailure: isUnauthorizedStatus,
+          run: () => app.authService.login(email, password),
+        },
+      );
+
+      reply.setCookie(
+        app.authService.getSessionCookieName(),
+        sessionToken,
+        app.authService.getSessionCookieOptions(),
+      );
+      return {
+        ok: true,
+        redirect:
+          user.role === 'owner' || user.role === 'admin'
+            ? '/admin/dashboard.html'
+            : '/app/dashboard.html',
+        user: {
+          id: user.id,
+          displayName: user.displayName,
+          email: user.email,
+          role: user.role,
+        },
+      };
+    },
+  );
 
   app.post('/auth/logout', async (request, reply) => {
     const token = readSessionToken(request.headers.cookie, app.authService.getSessionCookieName());
@@ -47,6 +70,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.post<{ Body: { displayName?: string; role?: UserRecord['role'] } }>(
     '/auth/dev-login',
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '15 minutes',
+        },
+      },
+    },
     async (request, reply) => {
       const displayName = request.body?.displayName?.trim() || 'Dev User';
       const role = request.body?.role ?? 'user';

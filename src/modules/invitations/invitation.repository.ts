@@ -13,6 +13,34 @@ export interface InvitationRecord {
   createdAt: string;
 }
 
+interface InvitationRow {
+  id: string;
+  expected_name: string | null;
+  note: string | null;
+  sync_enabled: boolean;
+  feed_enabled: boolean;
+  max_devices: number;
+  expires_at: string;
+  used_at: string | null;
+  used_by: string | null;
+  created_at: string;
+}
+
+function mapInvitationRow(row: InvitationRow): InvitationRecord {
+  return {
+    id: row.id,
+    expectedName: row.expected_name,
+    note: row.note,
+    syncEnabled: row.sync_enabled,
+    feedEnabled: row.feed_enabled,
+    maxDevices: row.max_devices,
+    expiresAt: row.expires_at,
+    usedAt: row.used_at,
+    usedBy: row.used_by,
+    createdAt: row.created_at,
+  };
+}
+
 export class InvitationRepository {
   constructor(private readonly db: DbClient) {}
 
@@ -49,71 +77,45 @@ export class InvitationRepository {
   }
 
   async findByTokenHash(tokenHash: string): Promise<InvitationRecord | null> {
-    const row = await this.db.queryOne<{
-      id: string;
-      expected_name: string | null;
-      note: string | null;
-      sync_enabled: boolean;
-      feed_enabled: boolean;
-      max_devices: number;
-      expires_at: string;
-      used_at: string | null;
-      used_by: string | null;
-      created_at: string;
-    }>(
+    const row = await this.db.queryOne<InvitationRow>(
       `SELECT id, expected_name, note, sync_enabled, feed_enabled, max_devices,
               expires_at, used_at, used_by, created_at
        FROM invitations WHERE token_hash = $1`,
       [tokenHash],
     );
-    if (!row) {
-      return null;
-    }
-    return {
-      id: row.id,
-      expectedName: row.expected_name,
-      note: row.note,
-      syncEnabled: row.sync_enabled,
-      feedEnabled: row.feed_enabled,
-      maxDevices: row.max_devices,
-      expiresAt: row.expires_at,
-      usedAt: row.used_at,
-      usedBy: row.used_by,
-      createdAt: row.created_at,
-    };
+    return row ? mapInvitationRow(row) : null;
+  }
+
+  /** Lock invitation row for atomic accept (must run inside a transaction). */
+  async lockByTokenHash(tokenHash: string): Promise<InvitationRecord | null> {
+    const row = await this.db.queryOne<InvitationRow>(
+      `SELECT id, expected_name, note, sync_enabled, feed_enabled, max_devices,
+              expires_at, used_at, used_by, created_at
+       FROM invitations WHERE token_hash = $1
+       FOR UPDATE`,
+      [tokenHash],
+    );
+    return row ? mapInvitationRow(row) : null;
   }
 
   async listActive(): Promise<InvitationRecord[]> {
-    const rows = await this.db.query<{
-      id: string;
-      expected_name: string | null;
-      note: string | null;
-      sync_enabled: boolean;
-      feed_enabled: boolean;
-      max_devices: number;
-      expires_at: string;
-      used_at: string | null;
-      used_by: string | null;
-      created_at: string;
-    }>(
+    const rows = await this.db.query<InvitationRow>(
       `SELECT id, expected_name, note, sync_enabled, feed_enabled, max_devices,
               expires_at, used_at, used_by, created_at
        FROM invitations
        ORDER BY created_at DESC
        LIMIT 100`,
     );
-    return rows.map((row) => ({
-      id: row.id,
-      expectedName: row.expected_name,
-      note: row.note,
-      syncEnabled: row.sync_enabled,
-      feedEnabled: row.feed_enabled,
-      maxDevices: row.max_devices,
-      expiresAt: row.expires_at,
-      usedAt: row.used_at,
-      usedBy: row.used_by,
-      createdAt: row.created_at,
-    }));
+    return rows.map(mapInvitationRow);
+  }
+
+  async countPendingUnused(): Promise<number> {
+    const row = await this.db.queryOne<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM invitations
+       WHERE used_at IS NULL AND expires_at > $1`,
+      [new Date().toISOString()],
+    );
+    return Number(row?.n ?? 0);
   }
 
   async markUsed(invitationId: string, userId: string, now: string): Promise<boolean> {

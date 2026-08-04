@@ -1,7 +1,7 @@
 {
-  "name": "seqta-calendar",
-  "version": "1.0.0",
-  "description": "Self-hosted SEQTA timetable sync backend with iCalendar feed",
+  "name": "seqta-link",
+  "version": "2.1.0",
+  "description": "Seqta Link — self-hosted SEQTA timetable sync with iCalendar feed",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "engines": {
@@ -26,6 +26,7 @@
     "@fastify/static": "^10.1.2",
     "better-sqlite3": "^13.0.2",
     "dotenv": "^16.5.0",
+    "embedded-postgres": "^18.4.0-beta.17",
     "fastify": "^5.3.3",
     "fastify-plugin": "^5.0.1",
     "pg": "^8.16.0",
@@ -41,5 +42,8 @@
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1"
+  },
+  "allowScripts": {
+    "@embedded-postgres/darwin-arm64@18.4.0-beta.17": true
   }
 }

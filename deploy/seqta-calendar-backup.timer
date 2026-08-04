@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily SEQTA Calendar Backup Timer
+Description=Daily Seqta Link Backup Timer
 
 [Timer]
 OnCalendar=*-*-* 02:30:00

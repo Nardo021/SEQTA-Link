@@ -1,4 +1,4 @@
--- SEQTA Calendar v2 schema (PostgreSQL 17+)
+-- Seqta Link v2 schema (PostgreSQL 17+)
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 

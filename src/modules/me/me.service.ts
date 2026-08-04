@@ -1,18 +1,26 @@
 import type { AppConfig } from '../../config.js';
-import type { DbClient } from '../../db/client.js';
 import { nowIso } from '../../shared/dates.js';
 import { AppError } from '../../shared/errors.js';
 import type { UserRecord } from '../../shared/types.js';
-import { CalendarRepository } from '../calendars/calendar.repository.js';
-import { CalendarReadService } from '../calendars/calendar-read.service.js';
-import { CalendarService } from '../calendars/calendar.service.js';
-import { DeviceRepository } from '../calendars/device.repository.js';
-import type { TokenService } from '../feeds/token.service.js';
-import { PairingRepository, PairingService } from '../devices/pairing.service.js';
-import { SourceIdentityRepository } from '../source-identities/source-identity.repository.js';
-import { UserRepository } from '../users/user.repository.js';
+import type { CalendarReadService } from '../calendars/calendar-read.service.js';
+import type { CalendarRepository } from '../calendars/calendar.repository.js';
+import type { CalendarService } from '../calendars/calendar.service.js';
+import type { DeviceRepository } from '../devices/device.repository.js';
+import type { PairingService } from '../devices/pairing.service.js';
+import type { SourceIdentityRepository } from '../source-identities/source-identity.repository.js';
+
+export interface MeServiceDeps {
+  config: AppConfig;
+  calendarRepo: CalendarRepository;
+  deviceRepo: DeviceRepository;
+  sourceIdentityRepo: SourceIdentityRepository;
+  calendarRead: CalendarReadService;
+  pairing: PairingService;
+  calendar: CalendarService;
+}
 
 export class MeService {
+  private readonly config: AppConfig;
   private readonly calendarRepo: CalendarRepository;
   private readonly deviceRepo: DeviceRepository;
   private readonly sourceIdentityRepo: SourceIdentityRepository;
@@ -20,23 +28,14 @@ export class MeService {
   private readonly pairingService: PairingService;
   private readonly calendarService: CalendarService;
 
-  constructor(
-    private readonly db: DbClient,
-    private readonly config: AppConfig,
-    private readonly tokenService: TokenService,
-  ) {
-    this.calendarRepo = new CalendarRepository(db);
-    this.deviceRepo = new DeviceRepository(db);
-    this.sourceIdentityRepo = new SourceIdentityRepository(db);
-    this.calendarRead = new CalendarReadService(db);
-    this.pairingService = new PairingService(
-      db,
-      new PairingRepository(db),
-      this.deviceRepo,
-      new UserRepository(db),
-      tokenService,
-    );
-    this.calendarService = new CalendarService(db, config, tokenService, this.calendarRepo, this.deviceRepo);
+  constructor(deps: MeServiceDeps) {
+    this.config = deps.config;
+    this.calendarRepo = deps.calendarRepo;
+    this.deviceRepo = deps.deviceRepo;
+    this.sourceIdentityRepo = deps.sourceIdentityRepo;
+    this.calendarRead = deps.calendarRead;
+    this.pairingService = deps.pairing;
+    this.calendarService = deps.calendar;
   }
 
   async getDashboard(user: UserRecord) {
@@ -138,6 +137,15 @@ export class MeService {
     return this.pairingService.createPairingCode(user, calendar.id);
   }
 
+  async listPairingCodes(user: UserRecord) {
+    const codes = await this.pairingService.listPendingCodes(user);
+    return { codes };
+  }
+
+  async revokePairingCode(user: UserRecord, pairingCodeId: string): Promise<void> {
+    await this.pairingService.revokePendingCode(user, pairingCodeId);
+  }
+
   async revokeDevice(user: UserRecord, deviceId: string): Promise<void> {
     const revoked = await this.deviceRepo.revokeDevice(deviceId, user.id, nowIso());
     if (!revoked) {
@@ -147,7 +155,7 @@ export class MeService {
 
   async listSyncRuns(user: UserRecord, limit = 20) {
     const calendar = await this.requireCalendar(user);
-    return this.calendarRead.listSyncRuns(calendar.id, limit);
+    return this.calendarRead.listSyncRuns(calendar.id, user.id, limit);
   }
 
   async updatePreferences(user: UserRecord, input: { calendarName?: string }) {

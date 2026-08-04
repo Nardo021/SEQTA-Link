@@ -6,4 +6,5 @@ backups/
 *.sqlite-wal
 *.sqlite-shm
 .env
+.seqta-initialized
 .DS_Store

@@ -3,21 +3,49 @@ import { buildApp } from '../../src/app.js';
 import { testSecretsEnv } from '../../src/cli/db.js';
 import type { FastifyInstance } from 'fastify';
 import { createTestDb } from './pg-test-db.js';
-import { createRealTestDatabase, hasRealPostgres } from './pg-real-db.js';
+import { createRealTestDatabase, probeRealPostgres } from './pg-real-db.js';
 import type { AppDatabase } from '../../src/db/client.js';
 
 let sharedMemDb: ReturnType<typeof createTestDb> | null = null;
 let sharedRealDb: Awaited<ReturnType<typeof createRealTestDatabase>> | null = null;
-let useRealPostgres = hasRealPostgres();
+let usingRealPostgres: boolean | null = null;
 
 export function getSharedTestDb() {
-  if (useRealPostgres) {
-    throw new Error('Use createTestApp() for real Postgres shared lifecycle');
-  }
   if (!sharedMemDb) {
     sharedMemDb = createTestDb();
   }
   return sharedMemDb;
+}
+
+export async function isUsingRealPostgres(): Promise<boolean> {
+  if (usingRealPostgres === null) {
+    usingRealPostgres = await probeRealPostgres();
+  }
+  return usingRealPostgres;
+}
+
+async function resolveTestDatabase(): Promise<AppDatabase> {
+  if (await isUsingRealPostgres()) {
+    if (!sharedRealDb) {
+      if (!process.env.DATABASE_URL && !process.env.DATABASE_URL_TEST) {
+        process.env.DATABASE_URL = 'postgresql://leo@127.0.0.1:5432/seqta_calendar_test';
+      } else if (!process.env.DATABASE_URL && process.env.DATABASE_URL_TEST) {
+        process.env.DATABASE_URL = process.env.DATABASE_URL_TEST;
+      }
+      sharedRealDb = await createRealTestDatabase();
+    } else {
+      await sharedRealDb.db.migrator.exec(`
+        TRUNCATE TABLE
+          audit_logs, sync_runs, event_aliases, events, pairing_codes,
+          devices, calendar_tokens, source_identities, calendars,
+          sessions, invitations, users
+        RESTART IDENTITY CASCADE
+      `);
+    }
+    return sharedRealDb.db;
+  }
+
+  return getSharedTestDb().db;
 }
 
 export async function createTestApp(): Promise<{
@@ -31,45 +59,11 @@ export async function createTestApp(): Promise<{
   process.env.NODE_ENV = 'test';
   process.env.LOG_LEVEL = process.env.LOG_LEVEL ?? 'silent';
   process.env.AUTH_DEV_LOGIN = 'true';
-  if (!process.env.DATABASE_URL) {
-    process.env.DATABASE_URL =
-      process.env.DATABASE_URL_TEST ?? 'postgresql://leo@127.0.0.1:5432/seqta_calendar_test';
-  }
+  process.env.EMBEDDED_PG = 'false';
 
+  const db = await resolveTestDatabase();
   const { loadConfig } = await import('../../src/config.js');
   const config = loadConfig();
-
-  let db: AppDatabase;
-  if (useRealPostgres) {
-    if (!sharedRealDb) {
-      try {
-        sharedRealDb = await createRealTestDatabase();
-      } catch (error) {
-        useRealPostgres = false;
-        console.warn(
-          '[test] Real Postgres unavailable, falling back to pg-mem:',
-          error instanceof Error ? error.message : error,
-        );
-        db = getSharedTestDb().db;
-        const app = await buildApp(config, { db });
-        await app.ready();
-        return { app, config, db };
-      }
-    } else {
-      // Truncate between tests that share the pool
-      await sharedRealDb.db.migrator.exec(`
-        TRUNCATE TABLE
-          audit_logs, sync_runs, event_aliases, events, pairing_codes,
-          devices, calendar_tokens, source_identities, calendars,
-          sessions, invitations, users
-        RESTART IDENTITY CASCADE
-      `);
-    }
-    db = sharedRealDb.db;
-  } else {
-    db = getSharedTestDb().db;
-  }
-
   const app = await buildApp(config, { db });
   await app.ready();
   return { app, config, db };

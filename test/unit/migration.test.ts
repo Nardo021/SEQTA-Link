@@ -6,17 +6,18 @@ import { applyMigrations, getAppliedMigrations, isMigrationComplete } from '../.
 describe('migrations', () => {
   it('applies migrations idempotently', async () => {
     const { db } = createTestDb();
+    const client = db.migrator;
 
-    const first = await applyMigrations(db);
+    const first = await applyMigrations(client);
     assert.ok(first.length >= 0);
 
-    const applied = await getAppliedMigrations(db);
+    const applied = await getAppliedMigrations(client);
     assert.ok(applied.includes('001_v2_schema.sql'));
 
-    const complete = await isMigrationComplete(db);
+    const complete = await isMigrationComplete(client);
     assert.equal(complete, true);
 
-    const tables = await db.query<{ table_name: string }>(
+    const tables = await client.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public'
        ORDER BY table_name`,

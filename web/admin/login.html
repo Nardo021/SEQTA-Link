@@ -10,26 +10,47 @@
     <div class="layout">
       <h1>Admin sign in</h1>
       <div class="card">
-        <p><a class="btn" href="/auth/login">Continue with Authentik</a></p>
-        <hr />
-        <div class="field">
-          <label for="displayName">Dev owner name</label>
-          <input id="displayName" value="Owner User" />
-        </div>
-        <button id="devBtn" type="button">Dev owner sign in</button>
+        <form id="loginForm">
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button type="submit">Sign in</button>
+        </form>
+        <p id="msg" class="error" hidden></p>
+        <p class="muted"><a href="/app/login.html">User portal sign in</a></p>
       </div>
     </div>
-    <script src="/js/admin-api.js"></script>
+    <script src="/js/api.js"></script>
     <script>
-      document.getElementById('devBtn').addEventListener('click', async () => {
-        const displayName = document.getElementById('displayName').value.trim();
-        await fetch('/auth/dev-login', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ displayName, role: 'owner' }),
-        });
-        window.location.href = '/admin/dashboard.html';
+      document.getElementById('loginForm').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const msg = document.getElementById('msg');
+        msg.hidden = true;
+        try {
+          const body = await api('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({
+              email: document.getElementById('email').value,
+              password: document.getElementById('password').value,
+            }),
+          });
+          const role = body?.user?.role;
+          if (role !== 'owner' && role !== 'admin') {
+            msg.textContent = 'This account is not an administrator.';
+            msg.hidden = false;
+            await api('/auth/logout', { method: 'POST', body: '{}' });
+            return;
+          }
+          window.location.href = body.redirect || '/admin/dashboard.html';
+        } catch (err) {
+          msg.textContent = err.message || 'Sign in failed.';
+          msg.hidden = false;
+        }
       });
     </script>
   </body>

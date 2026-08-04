@@ -65,6 +65,8 @@ export function eventToView(event: EventRecord, timestamps: CalendarTimestamps):
 
 export interface CalendarTimestamps {
   dtStamp: string;
+  calendarName?: string;
+  timezone?: string;
 }
 
 export function serializeCalendar(
@@ -79,14 +81,17 @@ export function serializeCalendar(
     return a.uid.localeCompare(b.uid);
   });
 
+  const calendarName = timestamps.calendarName?.trim() || 'Seqta Link';
+  const timezone = timestamps.timezone?.trim() || 'Australia/Sydney';
+
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Leoze//SEQTA Calendar//EN',
+    'PRODID:-//Leoze//Seqta Link//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    'X-WR-CALNAME:SEQTA Timetable',
-    'X-WR-TIMEZONE:Australia/Sydney',
+    `X-WR-CALNAME:${escapeIcalText(calendarName)}`,
+    `X-WR-TIMEZONE:${escapeIcalText(timezone)}`,
     'REFRESH-INTERVAL;VALUE=DURATION:PT1H',
     'X-PUBLISHED-TTL:PT1H',
   ];

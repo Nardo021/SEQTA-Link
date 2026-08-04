@@ -13,7 +13,6 @@
       <div id="content">Loading…</div>
     </div>
     <script src="/js/api.js"></script>
-    <script src="/js/admin-api.js"></script>
     <script>
       async function main() {
         document.getElementById('nav').innerHTML = renderAdminNav('dashboard.html');
@@ -25,6 +24,27 @@
             <div class="card"><div class="stat-label">Active</div><div class="stat-value">${dash.users.active}</div></div>
             <div class="card"><div class="stat-label">Suspended</div><div class="stat-value">${dash.users.suspended}</div></div>
             <div class="card"><div class="stat-label">Pending invites</div><div class="stat-value">${dash.invitations.pending}</div></div>
+          </div>
+          <div class="card">
+            <p>
+              <a href="/admin/users.html">Manage users</a> ·
+              <a href="/admin/invitations.html">Invitations</a> ·
+              <a href="/admin/audit.html">Audit logs</a>
+            </p>
+          </div>
+          <div class="card">
+            <h2>Recent audit</h2>
+            ${dash.recentAudit?.length
+              ? `<table>
+                  <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr>
+                  ${dash.recentAudit.map((l) => `<tr>
+                    <td>${formatDateTime(l.createdAt)}</td>
+                    <td>${l.actorDisplayName || l.actorType}</td>
+                    <td class="mono">${l.action}</td>
+                    <td>${l.targetDisplayName || l.targetUserId?.slice(0, 8) || '—'}</td>
+                  </tr>`).join('')}
+                </table>`
+              : '<p class="muted">No audit events yet.</p>'}
           </div>`;
       }
       main().catch((e) => { document.getElementById('content').textContent = e.message; });

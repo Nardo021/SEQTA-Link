@@ -1,4 +1,5 @@
-import { openDatabase, createCalendarService } from './db.js';
+import { bootstrapCalendar } from '../modules/calendars/calendar-bootstrap.js';
+import { openDatabase, closeDatabase } from './db.js';
 import { parseArgs } from './parse-args.js';
 
 export async function createFeedCommand(args: string[]): Promise<void> {
@@ -15,9 +16,9 @@ export async function createFeedCommand(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const { db, config } = await openDatabase();
+  const handle = await openDatabase();
   try {
-    const result = await createCalendarService(db.cli, config).createCalendar({
+    const result = await bootstrapCalendar(handle.db.cli, handle.config, handle.tokenService, {
       name,
       schoolHost,
       studentRef,
@@ -32,6 +33,6 @@ export async function createFeedCommand(args: string[]): Promise<void> {
       deviceId: result.deviceId,
     }, null, 2));
   } finally {
-    await db.close();
+    await closeDatabase(handle);
   }
 }

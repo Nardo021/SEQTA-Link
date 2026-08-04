@@ -1,5 +1,5 @@
 [Unit]
-Description=SEQTA Calendar Backend
+Description=Seqta Link Backend
 After=network-online.target
 Wants=network-online.target
 

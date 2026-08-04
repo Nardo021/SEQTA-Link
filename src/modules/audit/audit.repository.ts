@@ -37,23 +37,41 @@ export class AuditRepository {
     );
   }
 
-  async listRecent(limit: number): Promise<AuditLogRecord[]> {
-    const rows = await this.db.query<{
-      id: string;
-      actor_user_id: string | null;
-      actor_type: string;
-      target_user_id: string | null;
-      action: string;
-      request_id: string | null;
-      metadata: Record<string, unknown>;
-      created_at: string;
-    }>(
-      `SELECT id, actor_user_id, actor_type, target_user_id, action, request_id, metadata, created_at
-       FROM audit_logs
-       ORDER BY created_at DESC
-       LIMIT $1`,
-      [limit],
-    );
+  async listRecent(limit: number, action?: string): Promise<AuditLogRecord[]> {
+    const rows = action
+      ? await this.db.query<{
+          id: string;
+          actor_user_id: string | null;
+          actor_type: string;
+          target_user_id: string | null;
+          action: string;
+          request_id: string | null;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        }>(
+          `SELECT id, actor_user_id, actor_type, target_user_id, action, request_id, metadata, created_at
+           FROM audit_logs
+           WHERE action = $2
+           ORDER BY created_at DESC
+           LIMIT $1`,
+          [limit, action],
+        )
+      : await this.db.query<{
+          id: string;
+          actor_user_id: string | null;
+          actor_type: string;
+          target_user_id: string | null;
+          action: string;
+          request_id: string | null;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        }>(
+          `SELECT id, actor_user_id, actor_type, target_user_id, action, request_id, metadata, created_at
+           FROM audit_logs
+           ORDER BY created_at DESC
+           LIMIT $1`,
+          [limit],
+        );
     return rows.map((row) => ({
       id: row.id,
       actorUserId: row.actor_user_id,

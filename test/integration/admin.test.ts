@@ -2,7 +2,6 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createTestApp, baseSyncPayload } from '../helpers/test-app.js';
-import { createCalendarService } from '../../src/cli/db.js';
 
 async function devLogin(
   app: Awaited<ReturnType<typeof createTestApp>>['app'],
@@ -20,6 +19,19 @@ async function devLogin(
   return cookie.value;
 }
 
+async function userIdForSession(
+  app: Awaited<ReturnType<typeof createTestApp>>['app'],
+  session: string,
+) {
+  const me = await app.inject({
+    method: 'GET',
+    url: '/api/me',
+    cookies: { seqta_session: session },
+  });
+  assert.equal(me.statusCode, 200);
+  return (me.json() as { user: { id: string; displayName: string } }).user;
+}
+
 describe('admin api', () => {
   it('forbids regular users from admin routes', async () => {
     const { app } = await createTestApp();
@@ -33,22 +45,18 @@ describe('admin api', () => {
     await app.close();
   });
 
-  it('owner can manage users and write audit logs', async () => {
+  it('owner can manage users and write audit logs with requestId', async () => {
     const { app } = await createTestApp();
     const ownerSession = await devLogin(app, 'Owner Admin', 'owner');
     const userSession = await devLogin(app, 'Managed User', 'user');
-
-    const me = await app.inject({
-      method: 'GET',
-      url: '/api/me',
-      cookies: { seqta_session: userSession },
-    });
-    const userId = (me.json() as { user: { id: string } }).user.id;
+    const { id: userId } = await userIdForSession(app, userSession);
 
     const disableFeed = await app.inject({
-      method: 'POST',
-      url: `/api/admin/users/${userId}/disable-feed`,
+      method: 'PATCH',
+      url: `/api/admin/users/${userId}`,
       cookies: { seqta_session: ownerSession },
+      headers: { 'x-request-id': 'audit-req-1' },
+      payload: { feedEnabled: false },
     });
     assert.equal(disableFeed.statusCode, 200);
 
@@ -58,13 +66,130 @@ describe('admin api', () => {
       cookies: { seqta_session: ownerSession },
     });
     assert.equal(audit.statusCode, 200);
-    const logs = (audit.json() as { logs: Array<{ action: string }> }).logs;
-    assert.ok(logs.some((log) => log.action === 'user.disable_feed'));
+    const logs = (
+      audit.json() as {
+        logs: Array<{ action: string; requestId: string | null; actorDisplayName: string | null }>;
+      }
+    ).logs;
+    const entry = logs.find((log) => log.action === 'user.disable_feed');
+    assert.ok(entry);
+    assert.equal(entry.requestId, 'audit-req-1');
+    assert.ok(entry.actorDisplayName);
 
     await app.close();
   });
 
-  it('creates and lists invitations', async () => {
+  it('supports patch, suspend, sync-runs, devices, revoke, and reset-source-identity', async () => {
+    const { app } = await createTestApp();
+    const ownerSession = await devLogin(app, 'Ops Owner', 'owner');
+    const userSession = await devLogin(app, 'Target Student', 'user');
+    const user = await userIdForSession(app, userSession);
+
+    const patched = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/users/${user.id}`,
+      cookies: { seqta_session: ownerSession },
+      payload: { displayName: 'Renamed Student', maxDevices: 5 },
+    });
+    assert.equal(patched.statusCode, 200);
+    assert.equal((patched.json() as { user: { displayName: string; maxDevices: number } }).user.displayName, 'Renamed Student');
+    assert.equal((patched.json() as { user: { maxDevices: number } }).user.maxDevices, 5);
+
+    const pairing = await app.inject({
+      method: 'POST',
+      url: '/api/me/pairing-codes',
+      cookies: { seqta_session: userSession },
+    });
+    const { code } = pairing.json() as { code: string };
+    const paired = await app.inject({
+      method: 'POST',
+      url: '/api/device/pair',
+      payload: { code, deviceName: 'Admin Test Browser' },
+    });
+    assert.equal(paired.statusCode, 200);
+    const { deviceToken, deviceId } = paired.json() as { deviceToken: string; deviceId: string };
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/sync',
+      headers: {
+        authorization: `Bearer ${deviceToken}`,
+        'idempotency-key': randomUUID(),
+      },
+      payload: baseSyncPayload({ studentRef: '8801' }),
+    });
+
+    const devices = await app.inject({
+      method: 'GET',
+      url: `/api/admin/users/${user.id}/devices`,
+      cookies: { seqta_session: ownerSession },
+    });
+    assert.equal(devices.statusCode, 200);
+    assert.equal((devices.json() as { devices: unknown[] }).devices.length, 1);
+
+    const syncRuns = await app.inject({
+      method: 'GET',
+      url: `/api/admin/users/${user.id}/sync-runs`,
+      cookies: { seqta_session: ownerSession },
+    });
+    assert.equal(syncRuns.statusCode, 200);
+    const runs = (syncRuns.json() as { runs: Array<{ deviceName: string | null }> }).runs;
+    assert.ok(runs.length >= 1);
+    assert.equal(runs[0]?.deviceName, 'Admin Test Browser');
+
+    const timetable = await app.inject({
+      method: 'GET',
+      url: `/api/admin/users/${user.id}/timetable`,
+      cookies: { seqta_session: ownerSession },
+    });
+    assert.equal(timetable.statusCode, 200);
+    assert.ok(Array.isArray((timetable.json() as { events: unknown[] }).events));
+
+    const revoked = await app.inject({
+      method: 'POST',
+      url: `/api/admin/devices/${deviceId}/revoke`,
+      cookies: { seqta_session: ownerSession },
+    });
+    assert.equal(revoked.statusCode, 200);
+
+    const reset = await app.inject({
+      method: 'POST',
+      url: `/api/admin/users/${user.id}/reset-source-identity`,
+      cookies: { seqta_session: ownerSession },
+      payload: { confirmName: 'Renamed Student' },
+    });
+    assert.equal(reset.statusCode, 200);
+
+    const suspended = await app.inject({
+      method: 'POST',
+      url: `/api/admin/users/${user.id}/suspend`,
+      cookies: { seqta_session: ownerSession },
+    });
+    assert.equal(suspended.statusCode, 200);
+
+    const meAfter = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      cookies: { seqta_session: userSession },
+    });
+    assert.equal(meAfter.statusCode, 401);
+
+    const filtered = await app.inject({
+      method: 'GET',
+      url: '/api/admin/audit-logs?action=user.suspend',
+      cookies: { seqta_session: ownerSession },
+    });
+    assert.equal(filtered.statusCode, 200);
+    assert.ok(
+      (filtered.json() as { logs: Array<{ action: string }> }).logs.every(
+        (log) => log.action === 'user.suspend',
+      ),
+    );
+
+    await app.close();
+  });
+
+  it('creates and lists invitations with options', async () => {
     const { app } = await createTestApp();
     const ownerSession = await devLogin(app, 'Invite Owner', 'owner');
 
@@ -72,7 +197,14 @@ describe('admin api', () => {
       method: 'POST',
       url: '/api/admin/invitations',
       cookies: { seqta_session: ownerSession },
-      payload: { expectedName: 'New Student', note: 'Test invite' },
+      payload: {
+        expectedName: 'New Student',
+        note: 'Test invite',
+        maxDevices: 2,
+        expiresInHours: 24,
+        syncEnabled: true,
+        feedEnabled: false,
+      },
     });
     assert.equal(created.statusCode, 200);
     assert.match((created.json() as { inviteUrl: string }).inviteUrl, /invite\.html\?token=/);
@@ -83,233 +215,26 @@ describe('admin api', () => {
       cookies: { seqta_session: ownerSession },
     });
     assert.equal(listed.statusCode, 200);
-    const invitations = (listed.json() as { invitations: unknown[] }).invitations;
-    assert.ok(invitations.length >= 1);
+    const invitations = (
+      listed.json() as { invitations: Array<{ maxDevices: number; feedEnabled: boolean }> }
+    ).invitations;
+    assert.ok(invitations.some((inv) => inv.maxDevices === 2 && inv.feedEnabled === false));
 
     await app.close();
   });
-});
 
-describe('calendar client compatibility', () => {
-  async function setupFeedWithEvent(app: Awaited<ReturnType<typeof createTestApp>>['app']) {
-    const { config, db } = app as unknown as Awaited<ReturnType<typeof createTestApp>>;
-    const feed = await createCalendarService(db.cli, config).createCalendar({
-        name: 'Client Test Feed',
-        schoolHost: 'learn.masada.onseqtacloud.com',
-        studentRef: '6001',
-        timezone: 'Australia/Sydney',
-      });
-    await app.inject({
-      method: 'POST',
-      url: '/api/v1/sync',
-      headers: {
-        authorization: `Bearer ${feed.uploadToken}`,
-        'idempotency-key': randomUUID(),
-      },
-      payload: baseSyncPayload({
-        schoolHost: 'learn.masada.onseqtacloud.com',
-        studentRef: '6001',
-      }),
-    });
-    return feed;
-  }
-
-  it('serves RFC5545-compatible ICS for Apple/Google clients', async () => {
-    const ctx = await createTestApp();
-    const feed = await setupFeedWithEvent(ctx.app);
-
-    const response = await ctx.app.inject({
+  it('dashboard includes recent audit', async () => {
+    const { app } = await createTestApp();
+    const ownerSession = await devLogin(app, 'Dash Owner', 'owner');
+    const dash = await app.inject({
       method: 'GET',
-      url: `/calendar/${feed.calendarToken}.ics`,
-    });
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.headers['content-type'], 'text/calendar; charset=utf-8');
-
-    const body = String(response.body);
-    assert.ok(body.includes('\r\n'), 'ICS must use CRLF line endings');
-    assert.match(body, /BEGIN:VCALENDAR/);
-    assert.match(body, /VERSION:2\.0/);
-    assert.match(body, /PRODID:/);
-    assert.match(body, /BEGIN:VEVENT/);
-    assert.match(body, /UID:[^\r\n]+/);
-    assert.match(body, /DTSTART:/);
-    assert.match(body, /DTEND:/);
-    assert.match(body, /SUMMARY:/);
-    assert.match(body, /DTSTAMP:/);
-    assert.match(body, /SEQUENCE:/);
-    assert.match(body, /STATUS:CONFIRMED/);
-    assert.ok(response.headers.etag);
-
-    await ctx.app.close();
-  });
-
-  it('returns 304 when ETag matches (client cache)', async () => {
-    const ctx = await createTestApp();
-    const feed = await setupFeedWithEvent(ctx.app);
-
-    const first = await ctx.app.inject({
-      method: 'GET',
-      url: `/calendar/${feed.calendarToken}.ics`,
-    });
-    const etag = first.headers.etag;
-    const second = await ctx.app.inject({
-      method: 'GET',
-      url: `/calendar/${feed.calendarToken}.ics`,
-      headers: { 'if-none-match': String(etag) },
-    });
-    assert.equal(second.statusCode, 304);
-    await ctx.app.close();
-  });
-
-  it('includes cancelled events with STATUS:CANCELLED', async () => {
-    const ctx = await createTestApp();
-    const feed = await setupFeedWithEvent(ctx.app);
-
-    await ctx.app.inject({
-      method: 'POST',
-      url: '/api/v1/sync',
-      headers: {
-        authorization: `Bearer ${feed.uploadToken}`,
-        'idempotency-key': randomUUID(),
-      },
-      payload: baseSyncPayload({
-        schoolHost: 'learn.masada.onseqtacloud.com',
-        studentRef: '6001',
-        lessons: [],
-        allowEmptySnapshot: true,
-      }),
-    });
-
-    const response = await ctx.app.inject({
-      method: 'GET',
-      url: `/calendar/${feed.calendarToken}.ics`,
-    });
-    assert.match(String(response.body), /STATUS:CANCELLED/);
-    await ctx.app.close();
-  });
-
-  it('returns 410 when feed is disabled by administrator', async () => {
-    const ctx = await createTestApp();
-    const ownerSession = await devLogin(ctx.app, 'Feed Owner 410', 'owner');
-
-    const pairing = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/me/pairing-codes',
+      url: '/api/admin/dashboard',
       cookies: { seqta_session: ownerSession },
     });
-    const { code } = pairing.json() as { code: string };
-    const paired = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/device/pair',
-      payload: { code },
-    });
-    const { deviceToken } = paired.json() as { deviceToken: string };
-
-    await ctx.app.inject({
-      method: 'POST',
-      url: '/api/device/sync',
-      headers: {
-        authorization: `Bearer ${deviceToken}`,
-        'idempotency-key': randomUUID(),
-      },
-      payload: baseSyncPayload({ studentRef: '7001' }),
-    });
-
-    const rotated = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/me/calendar/rotate-token',
-      cookies: { seqta_session: ownerSession },
-    });
-    const calendarUrl = (rotated.json() as { calendarUrl: string }).calendarUrl;
-    const calendarToken = calendarUrl.split('/calendar/')[1]!.replace('.ics', '');
-
-    const me = await ctx.app.inject({
-      method: 'GET',
-      url: '/api/me',
-      cookies: { seqta_session: ownerSession },
-    });
-    const userId = (me.json() as { user: { id: string } }).user.id;
-
-    await ctx.app.inject({
-      method: 'POST',
-      url: `/api/admin/users/${userId}/disable-feed`,
-      cookies: { seqta_session: ownerSession },
-    });
-
-    const response = await ctx.app.inject({
-      method: 'GET',
-      url: `/calendar/${calendarToken}.ics`,
-    });
-    assert.equal(response.statusCode, 410);
-    assert.match(String(response.body), /disabled by administrator/i);
-
-    await ctx.app.close();
-  });
-
-  it('invalidates old calendar token after rotation', async () => {
-    const ctx = await createTestApp();
-    const ownerSession = await devLogin(ctx.app, 'Rotate Owner', 'owner');
-
-    const pairing = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/me/pairing-codes',
-      cookies: { seqta_session: ownerSession },
-    });
-    const { code } = pairing.json() as { code: string };
-    const paired = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/device/pair',
-      payload: { code },
-    });
-    const { deviceToken } = paired.json() as { deviceToken: string };
-
-    await ctx.app.inject({
-      method: 'POST',
-      url: '/api/device/sync',
-      headers: {
-        authorization: `Bearer ${deviceToken}`,
-        'idempotency-key': randomUUID(),
-      },
-      payload: baseSyncPayload({ studentRef: '7002' }),
-    });
-
-    const firstRotate = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/me/calendar/rotate-token',
-      cookies: { seqta_session: ownerSession },
-    });
-    const oldToken = (firstRotate.json() as { calendarUrl: string }).calendarUrl
-      .split('/calendar/')[1]!
-      .replace('.ics', '');
-
-    const me = await ctx.app.inject({
-      method: 'GET',
-      url: '/api/me',
-      cookies: { seqta_session: ownerSession },
-    });
-    const userId = (me.json() as { user: { id: string } }).user.id;
-
-    const secondRotate = await ctx.app.inject({
-      method: 'POST',
-      url: `/api/admin/users/${userId}/rotate-calendar-token`,
-      cookies: { seqta_session: ownerSession },
-    });
-    const newToken = (secondRotate.json() as { calendarUrl: string }).calendarUrl
-      .split('/calendar/')[1]!
-      .replace('.ics', '');
-
-    const oldResponse = await ctx.app.inject({
-      method: 'GET',
-      url: `/calendar/${oldToken}.ics`,
-    });
-    assert.equal(oldResponse.statusCode, 404);
-
-    const newResponse = await ctx.app.inject({
-      method: 'GET',
-      url: `/calendar/${newToken}.ics`,
-    });
-    assert.equal(newResponse.statusCode, 200);
-
-    await ctx.app.close();
+    assert.equal(dash.statusCode, 200);
+    const body = dash.json() as { recentAudit: unknown[]; users: { total: number } };
+    assert.ok(Array.isArray(body.recentAudit));
+    assert.ok(body.users.total >= 1);
+    await app.close();
   });
 });

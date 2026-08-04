@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Account · SEQTA Calendar</title>
+    <title>Account · Seqta Link</title>
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
@@ -30,6 +30,19 @@
             <button id="saveBtn" type="button">Save preferences</button>
             <button id="logoutBtn" class="secondary" type="button">Sign out</button>
             <p id="msg"></p>
+          </div>
+          <div class="card">
+            <h2>Change password</h2>
+            <div class="field">
+              <label for="currentPassword">Current password</label>
+              <input id="currentPassword" type="password" autocomplete="current-password" />
+            </div>
+            <div class="field">
+              <label for="newPassword">New password</label>
+              <input id="newPassword" type="password" autocomplete="new-password" />
+            </div>
+            <button id="passwordBtn" type="button">Update password</button>
+            <p id="passwordMsg"></p>
           </div>`;
         document.getElementById('saveBtn').addEventListener('click', async () => {
           await api('/api/me/preferences', {
@@ -40,6 +53,23 @@
           document.getElementById('msg').className = 'success';
         });
         document.getElementById('logoutBtn').addEventListener('click', logout);
+        document.getElementById('passwordBtn').addEventListener('click', async () => {
+          try {
+            await api('/api/me/password', {
+              method: 'POST',
+              body: JSON.stringify({
+                currentPassword: document.getElementById('currentPassword').value,
+                newPassword: document.getElementById('newPassword').value,
+              }),
+            });
+            document.getElementById('passwordMsg').textContent = 'Password updated. Sign in again.';
+            document.getElementById('passwordMsg').className = 'success';
+            setTimeout(() => { window.location.href = '/app/login.html'; }, 800);
+          } catch (err) {
+            document.getElementById('passwordMsg').textContent = err.message;
+            document.getElementById('passwordMsg').className = 'error';
+          }
+        });
       }
       main().catch((err) => {
         document.getElementById('content').innerHTML = `<p class="error">${err.message}</p>`;

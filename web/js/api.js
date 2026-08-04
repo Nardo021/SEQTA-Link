@@ -21,6 +21,8 @@ async function api(path, options = {}) {
   return body;
 }
 
+const adminApi = api;
+
 function renderNav(active) {
   const links = [
     ['dashboard.html', 'Dashboard'],
@@ -38,12 +40,37 @@ function renderNav(active) {
     .join('')}</nav>`;
 }
 
+function renderAdminNav(active) {
+  const links = [
+    ['dashboard.html', 'Dashboard'],
+    ['users.html', 'Users'],
+    ['invitations.html', 'Invitations'],
+    ['audit.html', 'Audit logs'],
+  ];
+  return `<nav class="nav">${links
+    .map(
+      ([href, label]) =>
+        `<a href="/admin/${href}" class="${active === href ? 'active' : ''}">${label}</a>`,
+    )
+    .join('')}<a href="/app/dashboard.html" style="margin-left:auto">User Portal</a></nav>`;
+}
+
 async function requireAuth() {
   try {
     return await api('/api/me');
   } catch {
     window.location.href = '/app/login.html';
     return null;
+  }
+}
+
+async function requireAdmin() {
+  try {
+    await api('/api/admin/dashboard');
+    return true;
+  } catch {
+    window.location.href = '/admin/login.html';
+    return false;
   }
 }
 

@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         SEQTA Calendar Sync
+// @name         Seqta Link Sync
 // @namespace    https://timetable.leoze.top
-// @version      1.0.1
-// @description  Sync SEQTA Learn timetable to seqta-calendar backend (Apple Calendar feed)
+// @version      2.1.0
+// @description  Sync SEQTA Learn timetable to Seqta Link (Apple / Google Calendar feed)
 // @author       Leo
 // @match        https://learn.masada.onseqtacloud.com/*
 // @match        https://*.onseqtacloud.com/*
@@ -559,14 +559,9 @@
       payload.allowEmptySnapshot = true;
     }
 
-    const useDeviceApi = token.startsWith('dvc_');
-    const url = useDeviceApi
-      ? `${config.backendUrl}/api/device/sync`
-      : `${config.backendUrl}/api/v1/sync`;
-
     const response = await gmRequest({
       method: 'POST',
-      url,
+      url: `${config.backendUrl}/api/v1/sync`,
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -618,6 +613,30 @@
       deviceId: parsed.deviceId,
       calendarLabel: parsed.calendarLabel,
     });
+    return parsed;
+  }
+
+  /** @returns {Promise<object>} */
+  async function fetchDeviceStatus() {
+    const config = loadConfig();
+    const token = config.deviceToken || config.uploadToken;
+    if (!token) {
+      return null;
+    }
+    const response = await gmRequest({
+      method: 'GET',
+      url: `${config.backendUrl}/api/v1/status`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const parsed = response.responseText ? JSON.parse(response.responseText) : null;
+    if (response.status < 200 || response.status >= 300) {
+      const code = parsed?.error?.code || `HTTP_${response.status}`;
+      const message = parsed?.error?.message || `Device status failed (${response.status})`;
+      const err = new Error(message);
+      err.code = code;
+      err.status = response.status;
+      throw err;
+    }
     return parsed;
   }
 
@@ -791,6 +810,11 @@ function mountUi() {
   syncBtn.className = "scs-btn";
   syncBtn.textContent = "Sync Timetable";
 
+  const pairBtn = document.createElement("button");
+  pairBtn.type = "button";
+  pairBtn.className = "scs-btn secondary";
+  pairBtn.textContent = "Pair device";
+
   const settingsBtn = document.createElement("button");
   settingsBtn.type = "button";
   settingsBtn.className = "scs-btn secondary";
@@ -800,6 +824,7 @@ function mountUi() {
   status.className = "scs-status";
 
   wrap.appendChild(syncBtn);
+  wrap.appendChild(pairBtn);
   wrap.appendChild(settingsBtn);
   wrap.appendChild(status);
   root.appendChild(wrap);
@@ -836,21 +861,16 @@ function mountUi() {
     const modal = document.createElement("div");
     modal.className = "scs-modal";
     modal.innerHTML = `
-        <h2>SEQTA Calendar Sync</h2>
+        <h2>Seqta Link Sync</h2>
         <div class="scs-field">
           <label for="scs-backend">Backend URL</label>
           <input id="scs-backend" type="url" placeholder="https://timetable.leoze.top" />
-          <small>Base URL of your seqta-calendar server (no trailing slash).</small>
+          <small>Base URL of your Seqta Link server (no trailing slash).</small>
         </div>
         <div class="scs-field">
           <label for="scs-profile">Active profile</label>
           <select id="scs-profile"></select>
           <small>Switch between paired accounts on this browser.</small>
-        </div>
-        <div class="scs-field">
-          <label for="scs-pair-code">Pair new device</label>
-          <input id="scs-pair-code" type="text" placeholder="7K4P-92MX" />
-          <small>Generate a code in Portal → Devices, then paste it here.</small>
         </div>
         <div class="scs-field">
           <label for="scs-token">Legacy upload token (optional)</label>
@@ -882,8 +902,6 @@ function mountUi() {
     const backendInput = modal.querySelector("#scs-backend");
     /** @type {HTMLSelectElement | null} */
     const profileSelect = modal.querySelector("#scs-profile");
-    /** @type {HTMLInputElement | null} */
-    const pairCodeInput = modal.querySelector("#scs-pair-code");
     /** @type {HTMLInputElement | null} */
     const tokenInput = modal.querySelector("#scs-token");
     /** @type {HTMLInputElement | null} */
@@ -927,16 +945,6 @@ function mountUi() {
         if (profileSelect?.value) {
           setActiveProfileId(profileSelect.value);
         }
-        const pairCode = pairCodeInput?.value.trim();
-        if (pairCode) {
-          try {
-            await pairDevice(pairCode, "Browser");
-            setStatus("Device paired.", "success");
-          } catch (error) {
-            setStatus(error instanceof Error ? error.message : String(error), "error");
-            return;
-          }
-        }
         setSetting(STORAGE.uploadToken, tokenInput?.value.trim() || "");
         setSetting(STORAGE.calendarUrl, calendarInput?.value.trim() || "");
         setSetting(
@@ -952,13 +960,81 @@ function mountUi() {
       });
   }
 
+  function openPairModal() {
+    const existing = document.querySelector(`#${UI_ID} .scs-backdrop`);
+    if (existing) existing.remove();
+
+    const config = loadConfig();
+    const backdrop = document.createElement("div");
+    backdrop.className = "scs-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "scs-modal";
+    modal.innerHTML = `
+        <h2>Pair this browser</h2>
+        <div class="scs-field">
+          <label for="scs-backend-pair">Backend URL</label>
+          <input id="scs-backend-pair" type="url" placeholder="https://timetable.leoze.top" />
+        </div>
+        <div class="scs-field">
+          <label for="scs-pair-code">Pairing code</label>
+          <input id="scs-pair-code" type="text" placeholder="7K4P-92MX" autocomplete="off" />
+          <small>Portal → Devices → Generate pairing code (valid 10 minutes).</small>
+        </div>
+        <div class="scs-field">
+          <label for="scs-device-name">Device name</label>
+          <input id="scs-device-name" type="text" placeholder="Chrome on MacBook" />
+        </div>
+        <div class="scs-actions">
+          <button type="button" class="scs-btn secondary" data-action="cancel">Cancel</button>
+          <button type="button" class="scs-btn" data-action="pair">Pair</button>
+        </div>
+      `;
+    /** @type {HTMLInputElement | null} */
+    const backendInput = modal.querySelector("#scs-backend-pair");
+    /** @type {HTMLInputElement | null} */
+    const pairCodeInput = modal.querySelector("#scs-pair-code");
+    /** @type {HTMLInputElement | null} */
+    const deviceNameInput = modal.querySelector("#scs-device-name");
+    if (backendInput) backendInput.value = config.backendUrl;
+    if (deviceNameInput) {
+      deviceNameInput.value = `${navigator.userAgentData?.brands?.[0]?.brand || "Browser"} on ${navigator.platform || "device"}`;
+    }
+    backdrop.appendChild(modal);
+    root.appendChild(backdrop);
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) backdrop.remove();
+    });
+    modal.querySelector('[data-action="cancel"]')?.addEventListener("click", () => backdrop.remove());
+    modal.querySelector('[data-action="pair"]')?.addEventListener("click", async () => {
+      const backendUrl = backendInput?.value.trim() || DEFAULTS.backendUrl;
+      const code = pairCodeInput?.value.trim() || "";
+      const deviceName = deviceNameInput?.value.trim() || "Browser";
+      if (!code) {
+        setStatus("Enter a pairing code.", "error");
+        return;
+      }
+      setSetting(STORAGE.backendUrl, backendUrl);
+      try {
+        const paired = await pairDevice(code, deviceName);
+        backdrop.remove();
+        setStatus(
+          `Paired as ${paired.calendarLabel}. Get the Apple Calendar URL in Portal → Calendar.`,
+          "success",
+        );
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : String(error), "error");
+      }
+    });
+  }
+
   settingsBtn.addEventListener("click", openSettingsModal);
+  pairBtn.addEventListener("click", openPairModal);
 
   syncBtn.addEventListener("click", async () => {
     const config = loadConfig();
     if (!config.deviceToken && !config.uploadToken) {
-      setStatus("Pair a device or configure a legacy upload token first.", "error");
-      openSettingsModal();
+      setStatus("Pair a device first.", "error");
+      openPairModal();
       return;
     }
 
@@ -969,10 +1045,15 @@ function mountUi() {
     if (!confirmed) return;
 
     syncBtn.disabled = true;
+    pairBtn.disabled = true;
     settingsBtn.disabled = true;
     setStatus("Starting sync…");
 
     try {
+      if (config.deviceToken?.startsWith("dvc_")) {
+        setStatus("Checking device…");
+        await fetchDeviceStatus();
+      }
       const { result, stats, emptySnapshotConfirmed } =
         await runSync(setStatus);
       const r = result?.result || {};
@@ -1006,13 +1087,14 @@ function mountUi() {
       console.error("[seqta-calendar-sync]", error);
     } finally {
       syncBtn.disabled = false;
+      pairBtn.disabled = false;
       settingsBtn.disabled = false;
     }
   });
 
   const config = loadConfig();
   if (!config.deviceToken && !config.uploadToken) {
-    setStatus("Pair a device in Calendar Settings.");
+    setStatus("Click Pair device to connect this browser.");
   } else {
     setStatus(`Profile: ${config.calendarLabel}`);
   }

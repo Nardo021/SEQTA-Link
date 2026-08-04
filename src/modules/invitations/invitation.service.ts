@@ -4,26 +4,18 @@ import type { DbClient } from '../../db/client.js';
 import { nowIso } from '../../shared/dates.js';
 import { AppError } from '../../shared/errors.js';
 import type { UserRecord } from '../../shared/types.js';
-import { provisionUserCalendar } from '../calendars/calendar-provisioning.js';
 import { InvitationRepository } from './invitation.repository.js';
-import type { TokenService } from '../feeds/token.service.js';
-import { UserRepository } from '../users/user.repository.js';
+import type { TokenService } from '../../security/token.service.js';
 
 export class InvitationService {
   private readonly invitationRepo: InvitationRepository;
-  private readonly userRepo: UserRepository;
 
   constructor(
-    private readonly db: DbClient,
+    db: DbClient,
     private readonly config: AppConfig,
     private readonly tokenService: TokenService,
   ) {
     this.invitationRepo = new InvitationRepository(db);
-    this.userRepo = new UserRepository(db);
-  }
-
-  hashInviteToken(rawToken: string): string {
-    return this.tokenService.hash('device', `invite:${rawToken}`);
   }
 
   async createInvitation(
@@ -44,7 +36,7 @@ export class InvitationService {
     const id = randomUUID();
     await this.invitationRepo.create({
       id,
-      tokenHash: this.hashInviteToken(rawToken),
+      tokenHash: this.tokenService.hashInvite(rawToken),
       createdBy: actor.id,
       expectedName: input.expectedName ?? null,
       note: input.note ?? null,
@@ -62,7 +54,9 @@ export class InvitationService {
   }
 
   async getInvitationPreview(rawToken: string) {
-    const invitation = await this.invitationRepo.findByTokenHash(this.hashInviteToken(rawToken));
+    const invitation = await this.invitationRepo.findByTokenHash(
+      this.tokenService.hashInvite(rawToken),
+    );
     if (!invitation || invitation.usedAt) {
       throw new AppError('INVALID_REQUEST', 'Invitation not found.', 404);
     }
@@ -75,36 +69,5 @@ export class InvitationService {
       syncEnabled: invitation.syncEnabled,
       feedEnabled: invitation.feedEnabled,
     };
-  }
-
-  async acceptInvitation(user: UserRecord, rawToken: string): Promise<UserRecord> {
-    const invitation = await this.invitationRepo.findByTokenHash(this.hashInviteToken(rawToken));
-    if (!invitation || invitation.usedAt) {
-      throw new AppError('INVALID_REQUEST', 'Invitation not found.', 404);
-    }
-    if (new Date(invitation.expiresAt).getTime() <= Date.now()) {
-      throw new AppError('INVALID_REQUEST', 'Invitation has expired.', 404);
-    }
-
-    const now = nowIso();
-    const updated = await this.userRepo.applyInvitationSettings(user.id, {
-      syncEnabled: invitation.syncEnabled,
-      feedEnabled: invitation.feedEnabled,
-      maxDevices: invitation.maxDevices,
-      displayName: invitation.expectedName ?? user.displayName,
-    }, now);
-    if (!updated) {
-      throw new AppError('INTERNAL_ERROR', 'Failed to apply invitation.', 500);
-    }
-
-    await this.db.withUserContext(user.id, async (client) => {
-      await provisionUserCalendar(client, this.config, this.tokenService, updated);
-    });
-
-    const marked = await this.invitationRepo.markUsed(invitation.id, user.id, now);
-    if (!marked) {
-      throw new AppError('INVALID_REQUEST', 'Invitation already used.', 409);
-    }
-    return (await this.userRepo.findById(user.id))!;
   }
 }

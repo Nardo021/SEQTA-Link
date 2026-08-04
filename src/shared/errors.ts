@@ -21,6 +21,7 @@ export type ErrorCode =
   | 'PAIRING_CODE_INVALID'
   | 'PAIRING_CODE_EXPIRED'
   | 'DEVICE_LIMIT_REACHED'
+  | 'RATE_LIMITED'
   | 'INTERNAL_ERROR';
 
 export class AppError extends Error {
@@ -68,6 +69,8 @@ export function statusCodeForError(code: ErrorCode): number {
     case 'PAIRING_CODE_EXPIRED':
     case 'DEVICE_LIMIT_REACHED':
       return 400;
+    case 'RATE_LIMITED':
+      return 429;
     case 'DATABASE_UNAVAILABLE':
       return 503;
     case 'INTERNAL_ERROR':

@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { openDatabase } from './db.js';
+import { openDatabase, closeDatabase } from './db.js';
 import { parseArgs } from './parse-args.js';
 
 const execFileAsync = promisify(execFile);
@@ -12,13 +12,13 @@ export async function backupCommand(args: string[]): Promise<void> {
   const outputDir = options.output ?? './backups';
   mkdirSync(outputDir, { recursive: true });
 
-  const { db, config } = await openDatabase();
+  const handle = await openDatabase();
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const sqlPath = join(outputDir, `seqta-calendar-${timestamp}.sql`);
   const gzipPath = `${sqlPath}.gz`;
 
   try {
-    await execFileAsync('pg_dump', [config.databaseUrl, '--file', sqlPath, '--format=plain'], {
+    await execFileAsync('pg_dump', [handle.config.databaseUrl, '--file', sqlPath, '--format=plain'], {
       env: process.env,
     });
 
@@ -28,7 +28,7 @@ export async function backupCommand(args: string[]): Promise<void> {
       JSON.stringify(
         {
           event: 'backup_completed',
-          source: config.databaseUrl.replace(/:[^:@/]+@/, ':***@'),
+          source: handle.config.databaseUrl.replace(/:[^:@/]+@/, ':***@'),
           backup: gzipPath,
           timestamp,
         },
@@ -48,6 +48,6 @@ export async function backupCommand(args: string[]): Promise<void> {
     console.error(error);
     process.exit(1);
   } finally {
-    await db.close();
+    await closeDatabase(handle);
   }
 }

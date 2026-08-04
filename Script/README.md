@@ -1,8 +1,12 @@
-# SEQTA Calendar Sync (Tampermonkey)
+# Seqta Link Sync (Tampermonkey)
 
-Tampermonkey userscript that extracts your SEQTA Learn timetable and uploads a normalized snapshot to the [seqta-calendar](https://timetable.leoze.top) backend via `POST /api/v1/sync`.
+**Userscript v2.1.0** for [Seqta Link](../README.md) — extracts your SEQTA Learn timetable and uploads it to the backend.
 
-Apple Calendar subscribes once to the ICS feed; each manual sync updates the same feed.
+**Recommended path:** Portal pairing code → Device Token (`dvc_…`) → `POST /api/v1/sync` / `GET /api/v1/status`.
+
+Legacy admin-provisioned upload tokens (`scu_…`) still work via Settings.
+
+> **Note (v2.1):** There is no `/api/device/sync` or `/api/device/status`. After pairing, the script talks only to `/api/v1/*`.
 
 ## Files
 
@@ -10,49 +14,41 @@ Apple Calendar subscribes once to the ICS feed; each manual sync updates the sam
 | ----------------------------- | ----------------------------------------------- |
 | `seqta-calendar-sync.user.js` | Built userscript (install into Tampermonkey)    |
 | `src/`                        | Source modules (edit these, not the built file) |
+| `userscript.header.js`        | `@name` / `@version` metadata (Seqta Link Sync) |
 | `build.mjs`                   | Bundles `src/` → `seqta-calendar-sync.user.js`  |
-
-After editing `src/`, rebuild:
 
 ```bash
 npm run build:userscript
 ```
 
+Built header should show `@name Seqta Link Sync` and `@version 2.1.0`.
+
+## Pairing flow (recommended)
+
+1. Sign in to the user portal (`/app`) and open **Devices**.
+2. Click **Generate pairing code** (valid 10 minutes, one-time).
+3. On SEQTA, click **Pair device** in the userscript panel.
+4. Enter the code and a device name → script stores a `dvc_…` profile.
+5. Click **Sync Timetable** (script checks `/api/v1/status` first).
+6. In Portal → **Calendar**, generate/rotate the subscription URL and add it to Apple/Google Calendar ([help](../web/help/apple.html)).
+
+Multiple profiles can be stored locally; Sync asks you to confirm the current SEQTA student vs destination account.
+
 ## Prerequisites
 
-1. A running **seqta-calendar** backend with a feed provisioned:
-
-   ```bash
-   npm run cli -- create-feed \
-     --name "My SEQTA Timetable" \
-     --school-host "learn.masada.onseqtacloud.com" \
-     --student-ref "4284" \
-     --timezone "Australia/Sydney"
-   ```
-
-2. Save the **Upload Token** (`scu_…`) and **Calendar URL** (`https://…/calendar/scc_….ics`).
-
-3. Backend `ALLOWED_ORIGINS` must include your SEQTA origin, e.g. `https://learn.masada.onseqtacloud.com`.
-
-4. [Tampermonkey](https://www.tampermonkey.net/) (or compatible userscript manager) in your browser.
+1. Running Seqta Link **v2.1.0+** with an account (invite or owner bootstrap).
+2. Backend `ALLOWED_ORIGINS` includes your SEQTA origin.
+3. [Tampermonkey](https://www.tampermonkey.net/).
 
 ## Install
 
-1. Open Tampermonkey → **Create a new script**.
-2. Delete the template and paste the full contents of `seqta-calendar-sync.user.js`, **or** use _Utilities → Install from file_ and select the file.
-3. Save (`Ctrl+S` / `Cmd+S`).
+1. Tampermonkey → **Create a new script** (or Install from file).
+2. Paste / select `seqta-calendar-sync.user.js`.
+3. Save.
 
 ### Match your school URL
 
-Default `@match` patterns cover Masada and common SEQTA hosts:
-
-- `https://learn.masada.onseqtacloud.com/*`
-- `https://*.onseqtacloud.com/*`
-- `https://learn.*.edu.au/*`
-- `https://*.seqta.com.au/*`
-- `https://learn.*/*`
-
-If your school uses a different hostname, add a line to the script metadata, e.g.:
+Default `@match` patterns cover common SEQTA hosts. Add your school if needed:
 
 ```javascript
 // @match        https://seqta.myschool.edu.au/*
@@ -60,129 +56,76 @@ If your school uses a different hostname, add a line to the script metadata, e.g
 
 ### Custom backend domain
 
-If your backend is not `timetable.leoze.top`, add a `@connect` line:
-
 ```javascript
 // @connect      my-calendar.example.com
 ```
 
-Tampermonkey requires `@connect` for every host used with `GM_xmlhttpRequest`.
+## Configure (Settings)
 
-## Configure
-
-1. Log in to **SEQTA Learn** in the same browser.
-2. Open your **Timetable** page (or any page — a floating panel appears after a few seconds if the toolbar is missing).
-3. Click **Calendar Settings** and fill in:
-
-   | Field                | Value                                                      |
-   | -------------------- | ---------------------------------------------------------- |
-   | Backend URL          | `https://timetable.leoze.top` (or your server)             |
-   | Upload token         | `scu_…` from feed creation                                 |
-   | Calendar URL         | Optional — `scc_….ics` link for quick access after sync    |
-   | Weeks to sync        | Default 12 (max 17, ~119 days)                             |
-   | Student ref override | Only if auto-detection fails; must match feed `studentRef` |
-
-Settings are stored in Tampermonkey storage (`GM_setValue` / `GM_getValue`), not sent anywhere except your backend on sync.
+| Field                | Value                                                      |
+| -------------------- | ---------------------------------------------------------- |
+| Backend URL          | `https://timetable.leoze.top` (or your Seqta Link server)  |
+| Active profile       | Switch between paired accounts                             |
+| Legacy upload token  | Optional `scu_…` for CLI-provisioned feeds                 |
+| Calendar URL         | Optional shortcut link after sync                          |
+| Weeks to sync        | Default 12 (max 17)                                        |
+| Student ref override | Only if auto-detection fails                               |
 
 ## Sync
 
 1. Click **Sync Timetable**.
-2. The script fetches **one week at a time** from SEQTA and builds a `coverage` array (`complete: true/false` per week).
-3. Lessons are normalized and uploaded with a fresh **Idempotency-Key** (UUID).
-4. Status shows counts (inserted / updated / removed) and warns if any weeks failed (those ranges will not trigger deletions on the backend).
+2. Confirm student → destination account.
+3. Script fetches week-by-week, uploads with a fresh Idempotency-Key.
+4. Incomplete weeks never trigger deletions on the backend.
 
-### Empty snapshot (holidays)
-
-If the backend returns `SUSPICIOUS_EMPTY_SNAPSHOT` (empty lessons over more than 7 complete days), the script automatically retries once with `allowEmptySnapshot: true`.
+Empty holiday snapshots that trigger `SUSPICIOUS_EMPTY_SNAPSHOT` auto-retry once with `allowEmptySnapshot: true`.
 
 ## sourceKey rules
 
-The backend uses `sourceKey` to match the same lesson across syncs. This script follows design doc §10.1:
-
 ```
-Priority 1:  date | periodKey | sourceOccurrenceId   (calendarid or ci from SEQTA)
-Priority 2:  date | periodKey | courseCode           (uppercase, no spaces)
-Priority 3:  date | periodKey | normalizedTitle     (lowercase slug)
+Priority 1:  date | periodKey | sourceOccurrenceId
+Priority 2:  date | periodKey | courseCode
+Priority 3:  date | periodKey | normalizedTitle
 ```
 
-**Never included in sourceKey:** teacher, room, start/end time, or display title alone.
-
-| Field                | Source                                                    |
-| -------------------- | --------------------------------------------------------- |
-| `date`               | `YYYY-MM-DD` from SEQTA                                   |
-| `periodKey`          | Normalized `period` label, or `slot-HHMM` from start time |
-| `sourceOccurrenceId` | SEQTA `calendarid` (e.g. `1575659` or `event:5`) or `ci`  |
-
-## SEQTA assumptions
-
-This script is based on the SEQTA Learn internal API used by the open-source [BetterSEQTA+](https://github.com/BetterSEQTA/BetterSEQTA-Plus) project (not required to run this script).
-
-### Primary: SEQTA JSON API
-
-| Context           | Endpoint                              | Body                                             |
-| ----------------- | ------------------------------------- | ------------------------------------------------ |
-| Student login     | `POST /seqta/student/login`           | `{ mode, query, redirect_url }` → student `id`   |
-| Student timetable | `POST /seqta/student/load/timetable?` | `{ from, until, student? }` → `payload.items[]`  |
-| Parent timetable  | `POST /seqta/parent/load/timetable`   | `{ list: true }` then `{ from, until, student }` |
-
-Expected lesson fields in `payload.items`:
-
-- `date`, `from`, `until`, `description`, `staff`, `room`, `code`, `type`, `period`
-- Stable IDs: `calendarid`, `ci`
-
-Requests use the **browser session on the SEQTA origin** (`fetch` + `credentials: include`). Session cookies are **not** forwarded to seqta-calendar.
-
-### Fallback: DOM scraping
-
-If the API fails for all weeks, the script parses the **currently visible** timetable DOM:
-
-- Container: `.timetablepage` or `.timetable`
-- Days: `.day` (optional `data-date`)
-- Entries: `.entry.class` / `.entry`
-- Subfields: `.title`, `.staff`, `.room`, `.code`, `.period`, `.times`
-
-DOM fallback only covers the week on screen; prefer the API path for full multi-week sync.
-
-### Skipped lesson types
-
-Non-class rows are excluded: `note`, `holiday`, `assembly-note` (same as BetterSEQTA calendar sync).
-
-### UI injection
-
-- Preferred mount point: `#toolbar` on the timetable page (alongside SEQTA date/zoom controls).
-- Fallback: fixed panel top-right on any matched SEQTA page.
+Never include teacher, room, or start/end time in `sourceKey`.
 
 ## Security notes
 
-- Only the **upload token** and normalized lesson JSON are sent to your backend.
-- SEQTA passwords, cookies, and raw SEQTA responses are **not** uploaded.
-- Use HTTPS for both SEQTA and the backend.
-- Rotate the upload token if it is ever exposed.
+- Only device/upload token + normalized lesson JSON go to your backend.
+- SEQTA passwords/cookies are never uploaded.
+- Use HTTPS. Rotate/revoke devices from Portal if a token leaks.
+- Repeated bad tokens may return `429 RATE_LIMITED`.
 
 ## Troubleshooting
 
 | Symptom                          | Check                                                                         |
 | -------------------------------- | ----------------------------------------------------------------------------- |
-| `Could not determine student ID` | Set **Student ref override** in settings                                      |
-| `INVALID_TOKEN`                  | Upload token correct and not rotated                                          |
-| `FEED_MISMATCH`                  | `schoolHost` / `studentRef` must match feed; you're on the correct SEQTA site |
-| CORS / network error             | Backend `@connect` domain; `ALLOWED_ORIGINS` includes SEQTA origin            |
-| `SUSPICIOUS_EMPTY_SNAPSHOT`      | Should auto-retry; confirm you're in a genuine holiday period                 |
-| Partial sync warnings            | Some weeks failed — incomplete coverage prevents deletions for those dates    |
-| No sync button on timetable      | Add `@match` for your school URL; check Tampermonkey is enabled               |
+| Pairing failed                   | Code unused, unexpired, sync enabled, under device limit                      |
+| `INVALID_TOKEN`                  | Re-pair or fix legacy `scu_` token                                            |
+| `RATE_LIMITED` / HTTP 429        | Wait for `Retry-After` / fix token                                            |
+| `SOURCE_IDENTITY_MISMATCH`       | Wrong SEQTA student for this profile                                          |
+| `FEED_MISMATCH`                  | schoolHost / studentRef must match calendar binding                           |
+| CORS / network error             | `@connect` + `ALLOWED_ORIGINS`                                                |
+| No sync button                   | `@match` + Tampermonkey enabled                                               |
 
 ## Development
 
-Edit `seqta-calendar-sync.user.js` and reload the script in Tampermonkey. For a local backend:
+```bash
+npm run build:userscript
+```
+
+Local backend:
 
 ```javascript
 // @connect      localhost
 // @connect      127.0.0.1
 ```
 
-Set Backend URL to `http://127.0.0.1:3210` in settings.
+Backend URL: `http://127.0.0.1:3210`.
 
 ## Related docs
 
-- Project design: [`../文档.md`](../文档.md) — §9 sync API, §10.1 sourceKey, §12 coverage, §20.2 CORS / GM_xmlhttpRequest
-- Backend API schema (when implemented): `src/modules/sync/sync.schemas.ts`
+- [README.md](../README.md) — Seqta Link overview
+- [docs/api.md](../docs/api.md) — Device API, Portal API, rate limits
+- [docs/pve_deploy.md](../docs/pve_deploy.md) — production deploy

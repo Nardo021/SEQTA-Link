@@ -1,13 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createTestApp } from "../helpers/test-app.js";
-import { createCalendarService } from "../../src/cli/db.js";
+import { createTestFeed } from "../../src/cli/db.js";
 
 describe("feeds and auth", () => {
   it("creates calendar with upload and calendar tokens", async () => {
     const { app, config, db } = await createTestApp();
 
-    const first = await createCalendarService(db.cli, config).createCalendar({
+    const first = await createTestFeed(db.cli, config, {
         name: "Test Feed",
         schoolHost: "learn.masada.onseqtacloud.com",
         studentRef: "4284",
@@ -36,7 +36,7 @@ describe("feeds and auth", () => {
   it("returns status whitelist fields only", async () => {
     const { app, config, db } = await createTestApp();
 
-    const created = await createCalendarService(db.cli, config).createCalendar({
+    const created = await createTestFeed(db.cli, config, {
         name: "Leo SEQTA Timetable",
         schoolHost: "learn.masada.onseqtacloud.com",
         studentRef: "4284",
@@ -63,7 +63,7 @@ describe("feeds and auth", () => {
   it("invalidates old token after rotation", async () => {
     const { app, config, db } = await createTestApp();
 
-    const created = await createCalendarService(db.cli, config).createCalendar({
+    const created = await createTestFeed(db.cli, config, {
         name: "Rotate Feed",
         schoolHost: "learn.masada.onseqtacloud.com",
         studentRef: "9999",

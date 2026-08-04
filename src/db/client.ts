@@ -21,14 +21,12 @@ export interface DbClient {
   ): Promise<T | null>;
   exec(sql: string, params?: unknown[]): Promise<void>;
   transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T>;
-  /** @deprecated Prefer role pools + withUserContext. Kept for migrate/emergency only. */
-  withBypassRls<T>(fn: (client: DbClient) => Promise<T>): Promise<T>;
   withUserContext<T>(userId: string, fn: (client: DbClient) => Promise<T>): Promise<T>;
   withRole<T>(role: DbApiRole, fn: (client: DbClient) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
-export interface AppDatabase extends DbClient {
+export interface AppDatabase {
   migrator: DbClient;
   device: DbClient;
   feed: DbClient;
@@ -36,6 +34,7 @@ export interface AppDatabase extends DbClient {
   user: DbClient;
   admin: DbClient;
   backup: DbClient;
+  close(): Promise<void>;
 }
 
 class PgDbClient implements DbClient {
@@ -80,20 +79,7 @@ class PgDbClient implements DbClient {
       throw error;
     } finally {
       if (shouldRelease) {
-        poolClient.release();
-      }
-    }
-  }
-
-  async withBypassRls<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
-    const poolClient = await this.acquireDedicatedClient();
-    const shouldRelease = this.isPool();
-    try {
-      await poolClient.query(`SELECT set_config('app.bypass_rls', 'true', false)`);
-      const scoped = new PgDbClient(poolClient, false, this.apiRole);
-      return await fn(scoped);
-    } finally {
-      if (shouldRelease) {
+        await this.resetSessionState(poolClient);
         poolClient.release();
       }
     }
@@ -112,6 +98,7 @@ class PgDbClient implements DbClient {
       return await fn(scoped);
     } finally {
       if (shouldRelease) {
+        await this.resetSessionState(poolClient);
         poolClient.release();
       }
     }
@@ -126,6 +113,7 @@ class PgDbClient implements DbClient {
       return await fn(scoped);
     } finally {
       if (shouldRelease) {
+        await this.resetSessionState(poolClient);
         poolClient.release();
       }
     }
@@ -151,6 +139,7 @@ class PgDbClient implements DbClient {
       await this.applyRole(poolClient);
       return await fn(poolClient);
     } finally {
+      await this.resetSessionState(poolClient);
       poolClient.release();
     }
   }
@@ -158,6 +147,15 @@ class PgDbClient implements DbClient {
   private async applyRole(client: PoolClient): Promise<void> {
     if (this.apiRole) {
       await client.query(`SET ROLE ${quoteIdent(this.apiRole)}`);
+    }
+  }
+
+  private async resetSessionState(client: PoolClient): Promise<void> {
+    try {
+      await client.query(`SELECT set_config('app.current_user_id', '', false)`);
+      await client.query('RESET ROLE');
+    } catch {
+      // Connection may already be broken; pool will discard on release errors.
     }
   }
 
@@ -190,32 +188,6 @@ export async function createPool(databaseUrl: string): Promise<Pool> {
     connectionString: databaseUrl,
     max: 10,
   });
-}
-
-export async function createAppDatabase(databaseUrl: string): Promise<{
-  db: AppDatabase;
-  pool: Pool;
-}> {
-  const pool = await createPool(databaseUrl);
-  const migrator = createDbClient(pool, 'seqta_migrator');
-  const device = createDbClient(pool, 'seqta_device_api');
-  const feed = createDbClient(pool, 'seqta_feed_api');
-  const cli = createDbClient(pool, 'seqta_cli');
-  const user = createDbClient(pool, 'seqta_user_api');
-  const admin = createDbClient(pool, 'seqta_admin_api');
-  const backup = createDbClient(pool, 'seqta_backup');
-
-  const db: AppDatabase = Object.assign(device, {
-    migrator,
-    device,
-    feed,
-    cli,
-    user,
-    admin,
-    backup,
-  });
-
-  return { db, pool };
 }
 
 export async function ensureRoleGrants(db: DbClient): Promise<void> {

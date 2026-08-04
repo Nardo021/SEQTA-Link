@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Devices · SEQTA Calendar</title>
+    <title>Devices · Seqta Link</title>
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
@@ -11,14 +11,43 @@
       <div id="nav"></div>
       <h1>Devices</h1>
       <div class="card">
-        <p>Pair a browser running the Tampermonkey script.</p>
+        <p>Generate a one-time pairing code, then enter it in Tampermonkey → <strong>Pair device</strong>.</p>
         <button id="pairBtn" type="button">Generate pairing code</button>
         <pre id="pairOut" class="mono"></pre>
       </div>
+      <div id="pending"></div>
       <div id="content"></div>
     </div>
     <script src="/js/api.js"></script>
     <script>
+      async function loadPending() {
+        const data = await api('/api/me/pairing-codes');
+        if (!data.codes.length) {
+          document.getElementById('pending').innerHTML = '';
+          return;
+        }
+        document.getElementById('pending').innerHTML = `
+          <div class="card">
+            <h2>Pending codes</h2>
+            <p class="muted">Codes are shown once when created. Pending entries can be cancelled.</p>
+            <table>
+              <thead><tr><th>Created</th><th>Expires</th><th></th></tr></thead>
+              <tbody>${data.codes.map((c) => `
+                <tr>
+                  <td>${formatDateTime(c.createdAt)}</td>
+                  <td>${formatDateTime(c.expiresAt)}</td>
+                  <td><button data-id="${c.id}" class="cancel-code secondary">Cancel</button></td>
+                </tr>`).join('')}</tbody>
+            </table>
+          </div>`;
+        document.querySelectorAll('.cancel-code').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            await api(`/api/me/pairing-codes/${btn.dataset.id}`, { method: 'DELETE' });
+            await loadPending();
+          });
+        });
+      }
+
       async function loadDevices() {
         const data = await api('/api/me/devices');
         if (!data.devices.length) {
@@ -44,6 +73,7 @@
           });
         });
       }
+
       async function main() {
         document.getElementById('nav').innerHTML = renderNav('devices.html');
         await requireAuth();
@@ -51,7 +81,9 @@
           const result = await api('/api/me/pairing-codes', { method: 'POST', body: '{}' });
           document.getElementById('pairOut').textContent =
             `Pairing code: ${result.code}\nExpires: ${formatDateTime(result.expiresAt)}\n\nEnter this in Tampermonkey within 10 minutes.`;
+          await loadPending();
         });
+        await loadPending();
         await loadDevices();
       }
       main().catch((err) => {

@@ -3,19 +3,25 @@ import type { AppConfig } from '../../config.js';
 import type { DbClient } from '../../db/client.js';
 import { nowIso } from '../../shared/dates.js';
 import { AppError } from '../../shared/errors.js';
+import {
+  assertPasswordPolicy,
+  hashPassword,
+  normalizeEmail,
+  verifyPassword,
+} from '../../shared/password.js';
 import type { UserRecord } from '../../shared/types.js';
 import { provisionUserCalendar } from '../calendars/calendar-provisioning.js';
-import type { TokenService } from '../feeds/token.service.js';
+import type { TokenService } from '../../security/token.service.js';
+import { InvitationRepository } from '../invitations/invitation.repository.js';
 import { SessionRepository } from './session.repository.js';
 import { UserRepository } from '../users/user.repository.js';
-import { OidcClient } from './oidc.client.js';
 
 const SESSION_COOKIE = 'seqta_session';
 
 export class AuthService {
   private readonly sessionRepo: SessionRepository;
   private readonly userRepo: UserRepository;
-  private readonly oidc?: OidcClient;
+  private readonly invitationRepo: InvitationRepository;
 
   constructor(
     private readonly db: DbClient,
@@ -24,28 +30,97 @@ export class AuthService {
   ) {
     this.sessionRepo = new SessionRepository(db);
     this.userRepo = new UserRepository(db);
-    if (config.oidcIssuer && config.oidcClientId && config.oidcRedirectUri) {
-      this.oidc = new OidcClient(config);
-    }
+    this.invitationRepo = new InvitationRepository(db);
   }
 
-  isOidcEnabled(): boolean {
-    return Boolean(this.oidc);
+  async login(
+    emailRaw: string,
+    password: string,
+  ): Promise<{ sessionToken: string; user: UserRecord }> {
+    const email = normalizeEmail(emailRaw);
+    if (!email || !password) {
+      throw new AppError('UNAUTHORIZED', 'Invalid email or password.', 401);
+    }
+
+    const user = await this.userRepo.findByEmail(email);
+    if (!user || user.accountStatus !== 'active') {
+      throw new AppError('UNAUTHORIZED', 'Invalid email or password.', 401);
+    }
+
+    const passwordHash = await this.userRepo.getPasswordHash(user.id);
+    if (!passwordHash || !verifyPassword(password, passwordHash)) {
+      throw new AppError('UNAUTHORIZED', 'Invalid email or password.', 401);
+    }
+
+    await this.ensureUserCalendar(user);
+    const sessionToken = await this.createSession(user.id);
+    return { sessionToken, user };
   }
 
-  getLoginRedirectUrl(state: string, codeChallenge: string): string {
-    if (!this.oidc) {
-      throw new AppError('INVALID_REQUEST', 'OIDC is not configured.', 400);
+  async registerWithInvitation(
+    rawToken: string,
+    input: { email: string; password: string; displayName?: string },
+  ): Promise<{ sessionToken: string; user: UserRecord }> {
+    const email = normalizeEmail(input.email);
+    if (!email || !email.includes('@')) {
+      throw new AppError('INVALID_REQUEST', 'A valid email is required.', 400);
     }
-    return this.oidc.buildAuthorizeUrl(state, codeChallenge);
-  }
 
-  async handleOidcCallback(code: string, codeVerifier: string): Promise<{ sessionToken: string; user: UserRecord }> {
-    if (!this.oidc) {
-      throw new AppError('INVALID_REQUEST', 'OIDC is not configured.', 400);
+    try {
+      assertPasswordPolicy(input.password);
+    } catch (error) {
+      throw new AppError(
+        'INVALID_REQUEST',
+        error instanceof Error ? error.message : 'Invalid password.',
+        400,
+      );
     }
-    const claims = await this.oidc.exchangeCode(code, codeVerifier);
-    const user = await this.findOrCreateOidcUser(claims);
+
+    const tokenHash = this.tokenService.hashInvite(rawToken);
+    const user = await this.db.transaction(async (tx) => {
+      const invitationRepo = new InvitationRepository(tx);
+      const userRepo = new UserRepository(tx);
+
+      const invitation = await invitationRepo.lockByTokenHash(tokenHash);
+      if (!invitation || invitation.usedAt) {
+        throw new AppError('INVALID_REQUEST', 'Invitation not found.', 404);
+      }
+      if (new Date(invitation.expiresAt).getTime() <= Date.now()) {
+        throw new AppError('INVALID_REQUEST', 'Invitation has expired.', 404);
+      }
+
+      const existing = await userRepo.findByEmail(email);
+      if (existing) {
+        throw new AppError('INVALID_REQUEST', 'An account with this email already exists.', 409);
+      }
+
+      const now = nowIso();
+      const displayName =
+        input.displayName?.trim() ||
+        invitation.expectedName?.trim() ||
+        email.split('@')[0] ||
+        'User';
+
+      const created = await userRepo.createUser({
+        id: randomUUID(),
+        displayName,
+        email,
+        passwordHash: hashPassword(input.password),
+        role: 'user',
+        syncEnabled: invitation.syncEnabled,
+        feedEnabled: invitation.feedEnabled,
+        maxDevices: invitation.maxDevices,
+        now,
+      });
+
+      const marked = await invitationRepo.markUsed(invitation.id, created.id, now);
+      if (!marked) {
+        throw new AppError('INVALID_REQUEST', 'Invitation already used.', 409);
+      }
+      return created;
+    });
+
+    await this.ensureUserCalendar(user);
     const sessionToken = await this.createSession(user.id);
     return { sessionToken, user };
   }
@@ -57,14 +132,15 @@ export class AuthService {
     if (!this.config.authDevLoginEnabled) {
       throw new AppError('FORBIDDEN', 'Dev login is disabled.', 403);
     }
-    const subject = `dev:${displayName.toLowerCase().replace(/\s+/g, '-')}`;
-    let user = await this.userRepo.findByOidc('dev:', subject);
+    const slug = displayName.toLowerCase().replace(/\s+/g, '-') || 'dev-user';
+    const email = `dev-${slug}@local.test`;
+    let user = await this.userRepo.findByEmail(email);
     if (!user) {
       user = await this.userRepo.createUser({
         id: randomUUID(),
-        oidcIssuer: 'dev:',
-        oidcSubject: subject,
         displayName,
+        email,
+        passwordHash: hashPassword(randomBytes(24).toString('base64url')),
         role,
         now: nowIso(),
       });
@@ -99,6 +175,38 @@ export class AuthService {
       return;
     }
     await this.sessionRepo.deleteByTokenHash(this.hashSessionToken(sessionToken));
+  }
+
+  async revokeAllSessions(userId: string): Promise<void> {
+    await this.sessionRepo.deleteByUserId(userId);
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    try {
+      assertPasswordPolicy(newPassword);
+    } catch (error) {
+      throw new AppError(
+        'INVALID_REQUEST',
+        error instanceof Error ? error.message : 'Invalid password.',
+        400,
+      );
+    }
+
+    const passwordHash = await this.userRepo.getPasswordHash(userId);
+    if (!passwordHash || !verifyPassword(currentPassword, passwordHash)) {
+      throw new AppError('UNAUTHORIZED', 'Current password is incorrect.', 401);
+    }
+
+    await this.userRepo.updateUser(
+      userId,
+      { passwordHash: hashPassword(newPassword) },
+      nowIso(),
+    );
+    await this.revokeAllSessions(userId);
   }
 
   getSessionCookieName(): string {
@@ -140,32 +248,6 @@ export class AuthService {
       .update(this.config.sessionSecret)
       .update(token)
       .digest('hex');
-  }
-
-  private async findOrCreateOidcUser(claims: {
-    issuer: string;
-    subject: string;
-    name: string;
-    email?: string;
-  }): Promise<UserRecord> {
-    const existing = await this.userRepo.findByOidc(claims.issuer, claims.subject);
-    if (existing) {
-      await this.ensureUserCalendar(existing);
-      return existing;
-    }
-
-    const user = await this.userRepo.createUser({
-      id: randomUUID(),
-      oidcIssuer: claims.issuer,
-      oidcSubject: claims.subject,
-      displayName: claims.name,
-      email: claims.email ?? null,
-      role: 'user',
-      now: nowIso(),
-    });
-
-    await this.ensureUserCalendar(user);
-    return user;
   }
 
   private async ensureUserCalendar(user: UserRecord): Promise<void> {

@@ -1,7 +1,5 @@
 export interface UserRecord {
   id: string;
-  oidcIssuer: string;
-  oidcSubject: string;
   displayName: string;
   email: string | null;
   role: 'owner' | 'admin' | 'user';
@@ -86,6 +84,8 @@ export interface SyncSuccessResponse {
 }
 
 export type TokenType = 'upload' | 'calendar' | 'device';
+
+export type SecretHashPurpose = TokenType | 'invite';
 
 export interface SyncContext {
   calendar: CalendarRecord;

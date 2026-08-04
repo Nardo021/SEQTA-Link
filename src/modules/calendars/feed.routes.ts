@@ -1,8 +1,13 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { EventRepository } from '../events/event.repository.js';
-import { IcalFeedService } from './ical-feed.service.js';
+import { resolveCalendarTokenRecord } from '../../db/token-resolve.js';
 import { AppError } from '../../shared/errors.js';
 import { redactCalendarPath } from '../../shared/redact.js';
+import { isNotFound, withBruteForce } from '../../security/with-brute-force.js';
+import { EventRepository } from '../events/event.repository.js';
+import { etagMatches } from './etag.js';
+import { IcalFeedService } from './ical-feed.service.js';
+
+const CALENDAR_CACHE_CONTROL = 'private, no-cache, max-age=0, must-revalidate';
 
 export const calendarRoutes: FastifyPluginAsync = async (app) => {
   app.get(
@@ -10,7 +15,7 @@ export const calendarRoutes: FastifyPluginAsync = async (app) => {
     {
       config: {
         rateLimit: {
-          max: 120,
+          max: 60,
           timeWindow: '1 minute',
           keyGenerator: (request) => request.ip,
         },
@@ -22,8 +27,19 @@ export const calendarRoutes: FastifyPluginAsync = async (app) => {
 
       let calendar;
       try {
-        const { rawToken } = app.tokenService.parseCalendarTokenFromPath(tokenParam);
-        calendar = await app.calendarService.authenticateCalendarToken(rawToken);
+        calendar = await withBruteForce(
+          app.bruteForce,
+          app.bruteForcePolicies.apiAuth,
+          [{ scope: 'feed-ip', key: request.ip }],
+          {
+            shouldRecordFailure: isNotFound,
+            run: async () => {
+              const { rawToken } = app.tokenService.parseCalendarTokenFromPath(tokenParam);
+              const hash = app.tokenService.hash('calendar', rawToken);
+              return resolveCalendarTokenRecord(app.db.feed, hash);
+            },
+          },
+        );
       } catch (error) {
         if (error instanceof AppError && (error.statusCode === 404 || error.code === 'FEED_DISABLED')) {
           request.log.info({ event: 'calendar_not_found', route: logPath, code: error.code });
@@ -36,19 +52,16 @@ export const calendarRoutes: FastifyPluginAsync = async (app) => {
         throw error;
       }
 
-      const feed = await app.db.feed.withUserContext(calendar.ownerUserId, async (client) => {
-        const icalFeedService = new IcalFeedService(app.config, new EventRepository(client));
-        return icalFeedService.getCalendar(calendar);
-      });
+      const feed = await app.db.feed.withUserContext(calendar.ownerUserId, async (client) =>
+        new IcalFeedService(app.config, new EventRepository(client)).getCalendar(calendar),
+      );
 
-      const ifNoneMatch = request.headers['if-none-match'];
-
-      if (ifNoneMatch === feed.etag) {
+      if (etagMatches(request.headers['if-none-match'], feed.etag)) {
         request.log.info({ event: 'calendar_not_modified', route: logPath });
         reply.status(304);
         reply.header('ETag', feed.etag);
         reply.header('Last-Modified', feed.lastModified);
-        reply.header('Cache-Control', 'private, max-age=0, must-revalidate');
+        reply.header('Cache-Control', CALENDAR_CACHE_CONTROL);
         return reply.send();
       }
 
@@ -60,7 +73,7 @@ export const calendarRoutes: FastifyPluginAsync = async (app) => {
 
       reply.header('Content-Type', 'text/calendar; charset=utf-8');
       reply.header('Content-Disposition', 'inline; filename="seqta-timetable.ics"');
-      reply.header('Cache-Control', 'private, max-age=0, must-revalidate');
+      reply.header('Cache-Control', CALENDAR_CACHE_CONTROL);
       reply.header('ETag', feed.etag);
       reply.header('Last-Modified', feed.lastModified);
       reply.header('X-Content-Type-Options', 'nosniff');

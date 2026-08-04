@@ -45,14 +45,9 @@
       payload.allowEmptySnapshot = true;
     }
 
-    const useDeviceApi = token.startsWith('dvc_');
-    const url = useDeviceApi
-      ? `${config.backendUrl}/api/device/sync`
-      : `${config.backendUrl}/api/v1/sync`;
-
     const response = await gmRequest({
       method: 'POST',
-      url,
+      url: `${config.backendUrl}/api/v1/sync`,
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -104,6 +99,30 @@
       deviceId: parsed.deviceId,
       calendarLabel: parsed.calendarLabel,
     });
+    return parsed;
+  }
+
+  /** @returns {Promise<object>} */
+  async function fetchDeviceStatus() {
+    const config = loadConfig();
+    const token = config.deviceToken || config.uploadToken;
+    if (!token) {
+      return null;
+    }
+    const response = await gmRequest({
+      method: 'GET',
+      url: `${config.backendUrl}/api/v1/status`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const parsed = response.responseText ? JSON.parse(response.responseText) : null;
+    if (response.status < 200 || response.status >= 300) {
+      const code = parsed?.error?.code || `HTTP_${response.status}`;
+      const message = parsed?.error?.message || `Device status failed (${response.status})`;
+      const err = new Error(message);
+      err.code = code;
+      err.status = response.status;
+      throw err;
+    }
     return parsed;
   }
 

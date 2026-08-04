@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createTestApp, baseSyncPayload } from "../helpers/test-app.js";
-import { createCalendarService } from "../../src/cli/db.js";
+import { createTestFeed } from "../../src/cli/db.js";
 import { randomUUID } from "node:crypto";
 
 describe("calendar integration", () => {
@@ -19,7 +19,7 @@ describe("calendar integration", () => {
   it("13. matching ETag returns 304", async () => {
     const { app, config, db } = await createTestApp();
 
-    const feed = await createCalendarService(db.cli, config).createCalendar({
+    const feed = await createTestFeed(db.cli, config, {
         name: "Calendar Feed",
         schoolHost: "learn.masada.onseqtacloud.com",
         studentRef: "7777",
@@ -60,7 +60,7 @@ describe("calendar integration", () => {
   it("14. content change updates ETag but preserves UID", async () => {
     const { app, config, db } = await createTestApp();
 
-    const feed = await createCalendarService(db.cli, config).createCalendar({
+    const feed = await createTestFeed(db.cli, config, {
         name: "UID Feed",
         schoolHost: "learn.masada.onseqtacloud.com",
         studentRef: "8888",

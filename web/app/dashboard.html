@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dashboard · SEQTA Calendar</title>
+    <title>Dashboard · Seqta Link</title>
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
@@ -33,6 +33,11 @@
             <p><strong>${dash.calendar.name}</strong> · revision ${dash.calendar.revision}</p>
             <p>Last sync status: ${dash.calendar.lastSyncStatus}</p>
             ${dash.sourceIdentity ? `<p>Bound to SEQTA student <span class="mono">${dash.sourceIdentity.studentRef}</span> on ${dash.sourceIdentity.schoolHost}</p>` : '<p>Source identity will lock on first successful sync.</p>'}
+            <p>
+              <a href="/app/devices.html">Pair a browser</a> ·
+              <a href="/app/calendar.html">Calendar subscription URL</a> ·
+              <a href="/app/sync-history.html">Sync history</a>
+            </p>
           </div>`;
       }
       main().catch((err) => {

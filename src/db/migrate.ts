@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { DbClient } from './client.js';
 import { createDbClient, createPool } from './client.js';
 import { loadConfig } from '../config.js';
+import { prepareDatabaseConnection } from './prepare-database.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../database/migrations');
@@ -12,6 +13,10 @@ export const MIGRATION_FILES = [
   '001_v2_schema.sql',
   '002_rls_policies.sql',
   '003_db_roles.sql',
+  '004_cli_lookup.sql',
+  '005_local_auth.sql',
+  '006_email_identity.sql',
+  '007_admin_delete_grants.sql',
 ] as const;
 
 export function listMigrationFiles(): string[] {
@@ -72,7 +77,8 @@ export async function isMigrationComplete(db: DbClient): Promise<boolean> {
 
 async function runCli(): Promise<void> {
   const config = loadConfig();
-  const pool = await createPool(config.databaseUrl);
+  const prepared = await prepareDatabaseConnection(config);
+  const pool = await createPool(prepared.databaseUrl);
   const db = createDbClient(pool);
   try {
     const applied = await applyMigrations(db);
@@ -83,6 +89,7 @@ async function runCli(): Promise<void> {
     }
   } finally {
     await db.close();
+    await prepared.stop();
   }
 }
 

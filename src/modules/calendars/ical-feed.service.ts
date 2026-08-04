@@ -26,8 +26,12 @@ export class IcalFeedService {
     const events = [...confirmed, ...cancelled];
 
     const dtStamp = calendar.lastChangedAt ?? calendar.lastSyncedAt ?? calendar.createdAt;
-    const body = serializeEvents(events, { dtStamp });
-    const etag = `"feed-${calendar.revision}"`;
+    const body = serializeEvents(events, {
+      dtStamp,
+      calendarName: calendar.name,
+      timezone: calendar.timezone,
+    });
+    const etag = `"calendar-${calendar.revision}"`;
     const lastModified = formatHttpDate(
       calendar.lastChangedAt ?? calendar.lastSyncedAt ?? calendar.updatedAt,
     );

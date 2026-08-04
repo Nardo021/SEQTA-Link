@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
-import { openDatabase, createCalendarService } from './db.js';
+import { openDatabase, closeDatabase } from './db.js';
 import { parseArgs } from './parse-args.js';
 import { CalendarRepository } from '../modules/calendars/calendar.repository.js';
-import { DeviceRepository } from '../modules/calendars/device.repository.js';
+import { DeviceRepository } from '../modules/devices/device.repository.js';
 import { UserRepository } from '../modules/users/user.repository.js';
-import { IcalFeedService } from '../modules/calendar/ical-feed.service.js';
+import { IcalFeedService } from '../modules/calendars/ical-feed.service.js';
 import { EventRepository } from '../modules/events/event.repository.js';
-import { createTokenService } from '../modules/feeds/token.service.js';
+import { createTokenService } from '../security/token.service.js';
 import { nowIso } from '../shared/dates.js';
 
 interface SqliteFeedRow {
@@ -67,26 +67,23 @@ export async function migrateV1SqliteCommand(args: string[]): Promise<void> {
     beforeIcs = '';
   }
 
-  const { db, config } = await openDatabase();
+  const handle = await openDatabase();
+  const { db, config } = handle;
   const now = nowIso();
 
   try {
-    await (async (client) => {
-      const userRepo = new UserRepository(client);
+    const ownerId = feed.id;
+    const calendarId = feed.id;
+    await new UserRepository(db.cli).createUser({
+      id: ownerId,
+      displayName: ownerName,
+      role: 'user',
+      now,
+    });
+
+    await db.cli.withUserContext(ownerId, async (client) => {
       const calendarRepo = new CalendarRepository(client);
       const deviceRepo = new DeviceRepository(client);
-
-      const ownerId = feed.id;
-      const calendarId = feed.id;
-
-      await userRepo.createUser({
-        id: ownerId,
-        oidcIssuer: 'bootstrap:',
-        oidcSubject: `migrated:${calendarId}`,
-        displayName: ownerName,
-        role: 'owner',
-        now,
-      });
 
       await client.exec(
         `INSERT INTO calendars (
@@ -256,9 +253,9 @@ export async function migrateV1SqliteCommand(args: string[]): Promise<void> {
           2,
         ),
       );
-    })(db.admin);
+    });
   } finally {
     sqlite.close();
-    await db.close();
+    await closeDatabase(handle);
   }
 }

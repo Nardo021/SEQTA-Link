@@ -1,6 +1,6 @@
 import type { DbClient } from '../../db/client.js';
 import type { CalendarRecord, DeviceRecord } from '../../shared/types.js';
-import { CalendarRepository } from './calendar.repository.js';
+import { CalendarRepository } from '../calendars/calendar.repository.js';
 
 export class DeviceRepository {
   constructor(private readonly db: DbClient) {}
@@ -137,6 +137,29 @@ export class DeviceRepository {
       [deviceId, ownerUserId, now],
     );
     return Boolean(result);
+  }
+
+  async findDeviceOwner(
+    deviceId: string,
+  ): Promise<{ id: string; ownerUserId: string; name: string; status: string } | null> {
+    const row = await this.db.queryOne<{
+      id: string;
+      owner_user_id: string;
+      name: string;
+      status: string;
+    }>(
+      `SELECT id, owner_user_id, name, status FROM devices WHERE id = $1`,
+      [deviceId],
+    );
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      ownerUserId: row.owner_user_id,
+      name: row.name,
+      status: row.status,
+    };
   }
 
   async revokeDeviceById(deviceId: string, now: string): Promise<boolean> {

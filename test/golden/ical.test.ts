@@ -1,11 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { escapeIcalText } from '../../src/modules/calendar/ical.escape.js';
-import { foldIcalLine } from '../../src/modules/calendar/ical.fold.js';
+import { escapeIcalText } from '../../src/modules/calendars/ical.escape.js';
+import { foldIcalLine } from '../../src/modules/calendars/ical.fold.js';
 import {
   formatEventSummary,
   serializeCalendar,
-} from '../../src/modules/calendar/ical.serializer.js';
+} from '../../src/modules/calendars/ical.serializer.js';
 
 describe('ical escape and fold', () => {
   it('escapes special characters', () => {

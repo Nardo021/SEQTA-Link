@@ -164,7 +164,11 @@ export class SyncRepository {
 
   async listByCalendar(calendarId: string, limit: number): Promise<SyncRunRecord[]> {
     const rows = await this.db.query<SyncRunRow>(
-      `SELECT * FROM sync_runs
+      `SELECT id, calendar_id, device_id, owner_user_id, idempotency_key, payload_hash, snapshot_hash,
+              range_from, range_until, received_count, normalized_count, duplicate_count,
+              inserted_count, updated_count, removed_count, restored_count, unchanged_count,
+              status, error_code, started_at, completed_at
+       FROM sync_runs
        WHERE calendar_id = $1
        ORDER BY started_at DESC
        LIMIT $2`,
