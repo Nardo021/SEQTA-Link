@@ -2,6 +2,7 @@
   "name": "seqta-calendar",
   "version": "1.0.0",
   "description": "Self-hosted SEQTA timetable sync backend with iCalendar feed",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "engines": {
     "node": ">=24"
