@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         SEQTA Calendar Sync
 // @namespace    https://timetable.leoze.top
-// @version      1.0.0
+// @version      1.0.1
 // @description  Sync SEQTA Learn timetable to seqta-calendar backend (Apple Calendar feed)
 // @author       Leo
+// @match        https://learn.masada.onseqtacloud.com/*
+// @match        https://*.onseqtacloud.com/*
 // @match        https://learn.*.edu.au/*
 // @match        https://*.seqta.com.au/*
 // @match        https://learn.*/*
@@ -644,13 +646,13 @@
     };
   }
 
-  const UI_ID = 'seqta-calendar-sync-root';
+const UI_ID = "seqta-calendar-sync-root";
 
-  function injectStyles() {
-    if (document.getElementById(`${UI_ID}-styles`)) return;
-    const style = document.createElement('style');
-    style.id = `${UI_ID}-styles`;
-    style.textContent = `
+function injectStyles() {
+  if (document.getElementById(`${UI_ID}-styles`)) return;
+  const style = document.createElement("style");
+  style.id = `${UI_ID}-styles`;
+  style.textContent = `
       #${UI_ID} { font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 13px; }
       #${UI_ID} .scs-wrap { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; }
       #${UI_ID} .scs-btn {
@@ -676,77 +678,82 @@
       #${UI_ID} .scs-field label { display: block; font-weight: 600; margin-bottom: 4px; }
       #${UI_ID} .scs-field input {
         width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px;
-        padding: 8px 10px; font-size: 13px;
+        padding: 8px 10px; font-size: 13px; color: #0f172a;
       }
+      #${UI_ID} .scs-field input::placeholder {
+        color: #94a3b8; opacity: 1;
+      }
+      #${UI_ID} .scs-field input::-webkit-input-placeholder { color: #94a3b8; }
+      #${UI_ID} .scs-field input::-moz-placeholder { color: #94a3b8; opacity: 1; }
       #${UI_ID} .scs-field small { display: block; margin-top: 4px; color: #64748b; }
       #${UI_ID} .scs-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
       #${UI_ID} .scs-link { color: #2563eb; text-decoration: none; }
       #${UI_ID} .scs-link:hover { text-decoration: underline; }
     `;
-    document.head.appendChild(style);
+  document.head.appendChild(style);
+}
+
+function mountUi() {
+  if (document.getElementById(UI_ID)) return;
+
+  injectStyles();
+
+  const root = document.createElement("div");
+  root.id = UI_ID;
+
+  const wrap = document.createElement("div");
+  wrap.className = "scs-wrap";
+
+  const syncBtn = document.createElement("button");
+  syncBtn.type = "button";
+  syncBtn.className = "scs-btn";
+  syncBtn.textContent = "Sync Timetable";
+
+  const settingsBtn = document.createElement("button");
+  settingsBtn.type = "button";
+  settingsBtn.className = "scs-btn secondary";
+  settingsBtn.textContent = "Calendar Settings";
+
+  const status = document.createElement("div");
+  status.className = "scs-status";
+
+  wrap.appendChild(syncBtn);
+  wrap.appendChild(settingsBtn);
+  wrap.appendChild(status);
+  root.appendChild(wrap);
+
+  const toolbar = document.getElementById("toolbar");
+  if (toolbar) {
+    toolbar.appendChild(root);
+  } else {
+    root.style.position = "fixed";
+    root.style.top = "12px";
+    root.style.right = "12px";
+    root.style.zIndex = "999997";
+    root.style.background = "#fff";
+    root.style.padding = "8px";
+    root.style.borderRadius = "8px";
+    root.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)";
+    document.body.appendChild(root);
   }
 
-  function mountUi() {
-    if (document.getElementById(UI_ID)) return;
+  /** @param {string} message @param {'info'|'success'|'error'} [kind] */
+  function setStatus(message, kind = "info") {
+    status.textContent = message;
+    status.className = `scs-status${kind === "error" ? " error" : kind === "success" ? " success" : ""}`;
+  }
 
-    injectStyles();
+  function openSettingsModal() {
+    const existing = document.querySelector(`#${UI_ID} .scs-backdrop`);
+    if (existing) existing.remove();
 
-    const root = document.createElement('div');
-    root.id = UI_ID;
+    const config = loadConfig();
+    const backdrop = document.createElement("div");
+    backdrop.className = "scs-backdrop";
 
-    const wrap = document.createElement('div');
-    wrap.className = 'scs-wrap';
-
-    const syncBtn = document.createElement('button');
-    syncBtn.type = 'button';
-    syncBtn.className = 'scs-btn';
-    syncBtn.textContent = 'Sync Timetable';
-
-    const settingsBtn = document.createElement('button');
-    settingsBtn.type = 'button';
-    settingsBtn.className = 'scs-btn secondary';
-    settingsBtn.textContent = 'Calendar Settings';
-
-    const status = document.createElement('div');
-    status.className = 'scs-status';
-
-    wrap.appendChild(syncBtn);
-    wrap.appendChild(settingsBtn);
-    wrap.appendChild(status);
-    root.appendChild(wrap);
-
-    const toolbar = document.getElementById('toolbar');
-    if (toolbar) {
-      toolbar.appendChild(root);
-    } else {
-      root.style.position = 'fixed';
-      root.style.top = '12px';
-      root.style.right = '12px';
-      root.style.zIndex = '999997';
-      root.style.background = '#fff';
-      root.style.padding = '8px';
-      root.style.borderRadius = '8px';
-      root.style.boxShadow = '0 4px 16px rgba(0,0,0,0.12)';
-      document.body.appendChild(root);
-    }
-
-    /** @param {string} message @param {'info'|'success'|'error'} [kind] */
-    function setStatus(message, kind = 'info') {
-      status.textContent = message;
-      status.className = `scs-status${kind === 'error' ? ' error' : kind === 'success' ? ' success' : ''}`;
-    }
-
-    function openSettingsModal() {
-      const existing = document.querySelector(`#${UI_ID} .scs-backdrop`);
-      if (existing) existing.remove();
-
-      const config = loadConfig();
-      const backdrop = document.createElement('div');
-      backdrop.className = 'scs-backdrop';
-
-      const modal = document.createElement('div');
-      modal.className = 'scs-modal';
-      modal.innerHTML = `
+    const modal = document.createElement("div");
+    modal.className = "scs-modal";
+    modal.innerHTML = `
         <h2>SEQTA Calendar Sync</h2>
         <div class="scs-field">
           <label for="scs-backend">Backend URL</label>
@@ -779,118 +786,137 @@
         </div>
       `;
 
-      /** @type {HTMLInputElement | null} */
-      const backendInput = modal.querySelector('#scs-backend');
-      /** @type {HTMLInputElement | null} */
-      const tokenInput = modal.querySelector('#scs-token');
-      /** @type {HTMLInputElement | null} */
-      const calendarInput = modal.querySelector('#scs-calendar');
-      /** @type {HTMLInputElement | null} */
-      const weeksInput = modal.querySelector('#scs-weeks');
-      /** @type {HTMLInputElement | null} */
-      const studentInput = modal.querySelector('#scs-student');
+    /** @type {HTMLInputElement | null} */
+    const backendInput = modal.querySelector("#scs-backend");
+    /** @type {HTMLInputElement | null} */
+    const tokenInput = modal.querySelector("#scs-token");
+    /** @type {HTMLInputElement | null} */
+    const calendarInput = modal.querySelector("#scs-calendar");
+    /** @type {HTMLInputElement | null} */
+    const weeksInput = modal.querySelector("#scs-weeks");
+    /** @type {HTMLInputElement | null} */
+    const studentInput = modal.querySelector("#scs-student");
 
-      if (backendInput) backendInput.value = config.backendUrl;
-      if (tokenInput) tokenInput.value = config.uploadToken;
-      if (calendarInput) calendarInput.value = config.calendarUrl;
-      if (weeksInput) weeksInput.value = String(config.weeksAhead);
-      if (studentInput) studentInput.value = config.studentRefOverride;
+    if (backendInput) backendInput.value = config.backendUrl;
+    if (tokenInput) tokenInput.value = config.uploadToken;
+    if (calendarInput) calendarInput.value = config.calendarUrl;
+    if (weeksInput) weeksInput.value = String(config.weeksAhead);
+    if (studentInput) studentInput.value = config.studentRefOverride;
 
-      backdrop.appendChild(modal);
-      root.appendChild(backdrop);
+    backdrop.appendChild(modal);
+    root.appendChild(backdrop);
 
-      backdrop.addEventListener('click', (event) => {
-        if (event.target === backdrop) backdrop.remove();
-      });
-
-      modal.querySelector('[data-action="cancel"]')?.addEventListener('click', () => backdrop.remove());
-      modal.querySelector('[data-action="save"]')?.addEventListener('click', () => {
-        setSetting(STORAGE.backendUrl, backendInput?.value.trim() || DEFAULTS.backendUrl);
-        setSetting(STORAGE.uploadToken, tokenInput?.value.trim() || '');
-        setSetting(STORAGE.calendarUrl, calendarInput?.value.trim() || '');
-        setSetting(STORAGE.weeksAhead, clampWeeks(Number(weeksInput?.value) || DEFAULTS.weeksAhead));
-        setSetting(STORAGE.studentRefOverride, studentInput?.value.trim() || '');
-        backdrop.remove();
-        setStatus('Settings saved.', 'success');
-      });
-    }
-
-    settingsBtn.addEventListener('click', openSettingsModal);
-
-    syncBtn.addEventListener('click', async () => {
-      const config = loadConfig();
-      if (!config.uploadToken) {
-        setStatus('Configure upload token first.', 'error');
-        openSettingsModal();
-        return;
-      }
-
-      syncBtn.disabled = true;
-      settingsBtn.disabled = true;
-      setStatus('Starting sync…');
-
-      try {
-        const { result, stats, emptySnapshotConfirmed } = await runSync(setStatus);
-        const r = result?.result || {};
-        const changed = result?.changed ? ' (calendar updated)' : '';
-        const replayed = result?.replayed ? ' [replay]' : '';
-        const emptyNote = emptySnapshotConfirmed ? ' Empty holiday snapshot confirmed.' : '';
-        let message =
-          `Sync OK${changed}${replayed}: ${stats.lessonCount} lessons, ` +
-          `${r.inserted ?? 0} new, ${r.updated ?? 0} updated, ${r.removed ?? 0} removed.` +
-          emptyNote;
-        if (stats.weeksFailed > 0) {
-          message += ` Warning: ${stats.weeksFailed} week(s) incomplete — deletions skipped for those ranges.`;
-        }
-        setStatus(message, 'success');
-
-        const calendarUrl = loadConfig().calendarUrl;
-        if (calendarUrl) {
-          const link = document.createElement('a');
-          link.href = calendarUrl;
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-          link.className = 'scs-link';
-          link.textContent = ' Open calendar feed';
-          status.appendChild(link);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setStatus(message, 'error');
-        console.error('[seqta-calendar-sync]', error);
-      } finally {
-        syncBtn.disabled = false;
-        settingsBtn.disabled = false;
-      }
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) backdrop.remove();
     });
 
-    const config = loadConfig();
-    if (!config.uploadToken) {
-      setStatus('Set upload token in Calendar Settings.');
-    }
+    modal
+      .querySelector('[data-action="cancel"]')
+      ?.addEventListener("click", () => backdrop.remove());
+    modal
+      .querySelector('[data-action="save"]')
+      ?.addEventListener("click", () => {
+        setSetting(
+          STORAGE.backendUrl,
+          backendInput?.value.trim() || DEFAULTS.backendUrl,
+        );
+        setSetting(STORAGE.uploadToken, tokenInput?.value.trim() || "");
+        setSetting(STORAGE.calendarUrl, calendarInput?.value.trim() || "");
+        setSetting(
+          STORAGE.weeksAhead,
+          clampWeeks(Number(weeksInput?.value) || DEFAULTS.weeksAhead),
+        );
+        setSetting(
+          STORAGE.studentRefOverride,
+          studentInput?.value.trim() || "",
+        );
+        backdrop.remove();
+        setStatus("Settings saved.", "success");
+      });
   }
 
-  function waitForTimetablePage() {
-    const selectors = ['.timetablepage', '.timetable', '#toolbar'];
-    const found = selectors.some((sel) => document.querySelector(sel));
-    if (found) {
-      mountUi();
+  settingsBtn.addEventListener("click", openSettingsModal);
+
+  syncBtn.addEventListener("click", async () => {
+    const config = loadConfig();
+    if (!config.uploadToken) {
+      setStatus("Configure upload token first.", "error");
+      openSettingsModal();
       return;
     }
 
-    const observer = new MutationObserver(() => {
-      if (selectors.some((sel) => document.querySelector(sel))) {
-        observer.disconnect();
-        mountUi();
-      }
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    syncBtn.disabled = true;
+    settingsBtn.disabled = true;
+    setStatus("Starting sync…");
 
-    // Also mount a floating panel after timeout so settings remain reachable on non-timetable pages.
-    window.setTimeout(() => {
-      if (!document.getElementById(UI_ID)) mountUi();
-    }, 5000);
+    try {
+      const { result, stats, emptySnapshotConfirmed } =
+        await runSync(setStatus);
+      const r = result?.result || {};
+      const changed = result?.changed ? " (calendar updated)" : "";
+      const replayed = result?.replayed ? " [replay]" : "";
+      const emptyNote = emptySnapshotConfirmed
+        ? " Empty holiday snapshot confirmed."
+        : "";
+      let message =
+        `Sync OK${changed}${replayed}: ${stats.lessonCount} lessons, ` +
+        `${r.inserted ?? 0} new, ${r.updated ?? 0} updated, ${r.removed ?? 0} removed.` +
+        emptyNote;
+      if (stats.weeksFailed > 0) {
+        message += ` Warning: ${stats.weeksFailed} week(s) incomplete — deletions skipped for those ranges.`;
+      }
+      setStatus(message, "success");
+
+      const calendarUrl = loadConfig().calendarUrl;
+      if (calendarUrl) {
+        const link = document.createElement("a");
+        link.href = calendarUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.className = "scs-link";
+        link.textContent = " Open calendar feed";
+        status.appendChild(link);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message, "error");
+      console.error("[seqta-calendar-sync]", error);
+    } finally {
+      syncBtn.disabled = false;
+      settingsBtn.disabled = false;
+    }
+  });
+
+  const config = loadConfig();
+  if (!config.uploadToken) {
+    setStatus("Set upload token in Calendar Settings.");
+  }
+}
+
+function waitForTimetablePage() {
+  const selectors = [".timetablepage", ".timetable", "#toolbar"];
+  const found = selectors.some((sel) => document.querySelector(sel));
+  if (found) {
+    mountUi();
+    return;
   }
 
-  waitForTimetablePage();
+  const observer = new MutationObserver(() => {
+    if (selectors.some((sel) => document.querySelector(sel))) {
+      observer.disconnect();
+      mountUi();
+    }
+  });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+
+  // Also mount a floating panel after timeout so settings remain reachable on non-timetable pages.
+  window.setTimeout(() => {
+    if (!document.getElementById(UI_ID)) mountUi();
+  }, 5000);
+}
+
+waitForTimetablePage();
 })();

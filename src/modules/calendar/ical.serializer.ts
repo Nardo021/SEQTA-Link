@@ -39,6 +39,14 @@ export function buildEventDescription(event: EventRecord): string {
   return parts.join('\\n');
 }
 
+export function formatEventSummary(title: string, room: string | null): string {
+  const trimmedRoom = room?.trim();
+  if (!trimmedRoom) {
+    return title;
+  }
+  return `${title} ${trimmedRoom}`;
+}
+
 export function eventToView(event: EventRecord, timestamps: CalendarTimestamps): CalendarEventView {
   return {
     uid: event.icalUid,
@@ -48,7 +56,7 @@ export function eventToView(event: EventRecord, timestamps: CalendarTimestamps):
     sequence: event.sequence,
     dtStart: formatIcalUtc(event.startsAtUtc),
     dtEnd: formatIcalUtc(event.endsAtUtc),
-    summary: event.title,
+    summary: formatEventSummary(event.title, event.room),
     location: event.room,
     description: buildEventDescription(event),
     status: event.status === 'cancelled' ? 'CANCELLED' : 'CONFIRMED',

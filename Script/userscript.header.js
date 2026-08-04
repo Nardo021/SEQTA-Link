@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         SEQTA Calendar Sync
 // @namespace    https://timetable.leoze.top
-// @version      1.0.0
+// @version      1.0.1
 // @description  Sync SEQTA Learn timetable to seqta-calendar backend (Apple Calendar feed)
 // @author       Leo
+// @match        https://learn.masada.onseqtacloud.com/*
+// @match        https://*.onseqtacloud.com/*
 // @match        https://learn.*.edu.au/*
 // @match        https://*.seqta.com.au/*
 // @match        https://learn.*/*

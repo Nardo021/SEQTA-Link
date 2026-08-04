@@ -6,11 +6,11 @@ Apple Calendar subscribes once to the ICS feed; each manual sync updates the sam
 
 ## Files
 
-| File / directory | Purpose |
-|------------------|---------|
-| `seqta-calendar-sync.user.js` | Built userscript (install into Tampermonkey) |
-| `src/` | Source modules (edit these, not the built file) |
-| `build.mjs` | Bundles `src/` → `seqta-calendar-sync.user.js` |
+| File / directory              | Purpose                                         |
+| ----------------------------- | ----------------------------------------------- |
+| `seqta-calendar-sync.user.js` | Built userscript (install into Tampermonkey)    |
+| `src/`                        | Source modules (edit these, not the built file) |
+| `build.mjs`                   | Bundles `src/` → `seqta-calendar-sync.user.js`  |
 
 After editing `src/`, rebuild:
 
@@ -25,27 +25,29 @@ npm run build:userscript
    ```bash
    npm run cli -- create-feed \
      --name "My SEQTA Timetable" \
-     --school-host "learn.example-school.edu.au" \
+     --school-host "learn.masada.onseqtacloud.com" \
      --student-ref "4284" \
      --timezone "Australia/Sydney"
    ```
 
 2. Save the **Upload Token** (`scu_…`) and **Calendar URL** (`https://…/calendar/scc_….ics`).
 
-3. Backend `ALLOWED_ORIGINS` must include your SEQTA origin, e.g. `https://learn.example-school.edu.au`.
+3. Backend `ALLOWED_ORIGINS` must include your SEQTA origin, e.g. `https://learn.masada.onseqtacloud.com`.
 
 4. [Tampermonkey](https://www.tampermonkey.net/) (or compatible userscript manager) in your browser.
 
 ## Install
 
 1. Open Tampermonkey → **Create a new script**.
-2. Delete the template and paste the full contents of `seqta-calendar-sync.user.js`, **or** use *Utilities → Install from file* and select the file.
+2. Delete the template and paste the full contents of `seqta-calendar-sync.user.js`, **or** use _Utilities → Install from file_ and select the file.
 3. Save (`Ctrl+S` / `Cmd+S`).
 
 ### Match your school URL
 
-Default `@match` patterns cover common SEQTA hosts:
+Default `@match` patterns cover Masada and common SEQTA hosts:
 
+- `https://learn.masada.onseqtacloud.com/*`
+- `https://*.onseqtacloud.com/*`
 - `https://learn.*.edu.au/*`
 - `https://*.seqta.com.au/*`
 - `https://learn.*/*`
@@ -72,12 +74,12 @@ Tampermonkey requires `@connect` for every host used with `GM_xmlhttpRequest`.
 2. Open your **Timetable** page (or any page — a floating panel appears after a few seconds if the toolbar is missing).
 3. Click **Calendar Settings** and fill in:
 
-   | Field | Value |
-   |-------|-------|
-   | Backend URL | `https://timetable.leoze.top` (or your server) |
-   | Upload token | `scu_…` from feed creation |
-   | Calendar URL | Optional — `scc_….ics` link for quick access after sync |
-   | Weeks to sync | Default 12 (max 17, ~119 days) |
+   | Field                | Value                                                      |
+   | -------------------- | ---------------------------------------------------------- |
+   | Backend URL          | `https://timetable.leoze.top` (or your server)             |
+   | Upload token         | `scu_…` from feed creation                                 |
+   | Calendar URL         | Optional — `scc_….ics` link for quick access after sync    |
+   | Weeks to sync        | Default 12 (max 17, ~119 days)                             |
    | Student ref override | Only if auto-detection fails; must match feed `studentRef` |
 
 Settings are stored in Tampermonkey storage (`GM_setValue` / `GM_getValue`), not sent anywhere except your backend on sync.
@@ -105,11 +107,11 @@ Priority 3:  date | periodKey | normalizedTitle     (lowercase slug)
 
 **Never included in sourceKey:** teacher, room, start/end time, or display title alone.
 
-| Field | Source |
-|-------|--------|
-| `date` | `YYYY-MM-DD` from SEQTA |
-| `periodKey` | Normalized `period` label, or `slot-HHMM` from start time |
-| `sourceOccurrenceId` | SEQTA `calendarid` (e.g. `1575659` or `event:5`) or `ci` |
+| Field                | Source                                                    |
+| -------------------- | --------------------------------------------------------- |
+| `date`               | `YYYY-MM-DD` from SEQTA                                   |
+| `periodKey`          | Normalized `period` label, or `slot-HHMM` from start time |
+| `sourceOccurrenceId` | SEQTA `calendarid` (e.g. `1575659` or `event:5`) or `ci`  |
 
 ## SEQTA assumptions
 
@@ -117,11 +119,11 @@ This script is based on the SEQTA Learn internal API used by the open-source [Be
 
 ### Primary: SEQTA JSON API
 
-| Context | Endpoint | Body |
-|---------|----------|------|
-| Student login | `POST /seqta/student/login` | `{ mode, query, redirect_url }` → student `id` |
-| Student timetable | `POST /seqta/student/load/timetable?` | `{ from, until, student? }` → `payload.items[]` |
-| Parent timetable | `POST /seqta/parent/load/timetable` | `{ list: true }` then `{ from, until, student }` |
+| Context           | Endpoint                              | Body                                             |
+| ----------------- | ------------------------------------- | ------------------------------------------------ |
+| Student login     | `POST /seqta/student/login`           | `{ mode, query, redirect_url }` → student `id`   |
+| Student timetable | `POST /seqta/student/load/timetable?` | `{ from, until, student? }` → `payload.items[]`  |
+| Parent timetable  | `POST /seqta/parent/load/timetable`   | `{ list: true }` then `{ from, until, student }` |
 
 Expected lesson fields in `payload.items`:
 
@@ -159,15 +161,15 @@ Non-class rows are excluded: `note`, `holiday`, `assembly-note` (same as BetterS
 
 ## Troubleshooting
 
-| Symptom | Check |
-|---------|-------|
-| `Could not determine student ID` | Set **Student ref override** in settings |
-| `INVALID_TOKEN` | Upload token correct and not rotated |
-| `FEED_MISMATCH` | `schoolHost` / `studentRef` must match feed; you're on the correct SEQTA site |
-| CORS / network error | Backend `@connect` domain; `ALLOWED_ORIGINS` includes SEQTA origin |
-| `SUSPICIOUS_EMPTY_SNAPSHOT` | Should auto-retry; confirm you're in a genuine holiday period |
-| Partial sync warnings | Some weeks failed — incomplete coverage prevents deletions for those dates |
-| No sync button on timetable | Add `@match` for your school URL; check Tampermonkey is enabled |
+| Symptom                          | Check                                                                         |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `Could not determine student ID` | Set **Student ref override** in settings                                      |
+| `INVALID_TOKEN`                  | Upload token correct and not rotated                                          |
+| `FEED_MISMATCH`                  | `schoolHost` / `studentRef` must match feed; you're on the correct SEQTA site |
+| CORS / network error             | Backend `@connect` domain; `ALLOWED_ORIGINS` includes SEQTA origin            |
+| `SUSPICIOUS_EMPTY_SNAPSHOT`      | Should auto-retry; confirm you're in a genuine holiday period                 |
+| Partial sync warnings            | Some weeks failed — incomplete coverage prevents deletions for those dates    |
+| No sync button on timetable      | Add `@match` for your school URL; check Tampermonkey is enabled               |
 
 ## Development
 

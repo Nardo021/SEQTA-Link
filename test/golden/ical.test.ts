@@ -2,7 +2,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { escapeIcalText } from '../../src/modules/calendar/ical.escape.js';
 import { foldIcalLine } from '../../src/modules/calendar/ical.fold.js';
-import { serializeCalendar } from '../../src/modules/calendar/ical.serializer.js';
+import {
+  formatEventSummary,
+  serializeCalendar,
+} from '../../src/modules/calendar/ical.serializer.js';
 
 describe('ical escape and fold', () => {
   it('escapes special characters', () => {
@@ -14,6 +17,17 @@ describe('ical escape and fold', () => {
     const folded = foldIcalLine(line);
     assert.ok(folded.length > 1);
     assert.ok(folded[1]?.startsWith(' '));
+  });
+});
+
+describe('event summary', () => {
+  it('appends room to title without a Room prefix', () => {
+    assert.equal(formatEventSummary('Music 1', 'M202'), 'Music 1 M202');
+  });
+
+  it('keeps title alone when room is empty', () => {
+    assert.equal(formatEventSummary('Music 1', null), 'Music 1');
+    assert.equal(formatEventSummary('Music 1', '  '), 'Music 1');
   });
 });
 

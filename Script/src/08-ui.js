@@ -30,8 +30,13 @@ function injectStyles() {
       #${UI_ID} .scs-field label { display: block; font-weight: 600; margin-bottom: 4px; }
       #${UI_ID} .scs-field input {
         width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px;
-        padding: 8px 10px; font-size: 13px;
+        padding: 8px 10px; font-size: 13px; color: #0f172a;
       }
+      #${UI_ID} .scs-field input::placeholder {
+        color: #94a3b8; opacity: 1;
+      }
+      #${UI_ID} .scs-field input::-webkit-input-placeholder { color: #94a3b8; }
+      #${UI_ID} .scs-field input::-moz-placeholder { color: #94a3b8; opacity: 1; }
       #${UI_ID} .scs-field small { display: block; margin-top: 4px; color: #64748b; }
       #${UI_ID} .scs-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
       #${UI_ID} .scs-link { color: #2563eb; text-decoration: none; }
