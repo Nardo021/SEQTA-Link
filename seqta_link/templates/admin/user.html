@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ target.display_name }} · Admin{% endblock %}
+{% block nav %}{% include "partials/nav_admin.html" %}{% endblock %}
+{% block content %}
+<h1>{{ target.display_name }}</h1>
+<div class="card">
+  <form method="post">
+    <input type="hidden" name="action" value="update" />
+    <div class="field"><label>Display name</label><input name="display_name" value="{{ target.display_name }}" /></div>
+    <div class="field"><label>Max devices</label><input name="max_devices" type="number" value="{{ target.max_devices }}" /></div>
+    <label><input type="checkbox" name="sync_enabled" {% if target.sync_enabled %}checked{% endif %} /> Sync enabled</label>
+    <label><input type="checkbox" name="feed_enabled" {% if target.feed_enabled %}checked{% endif %} /> Feed enabled</label>
+    <p><button type="submit">Save</button></p>
+  </form>
+  {% if target.role != 'owner' %}
+  <form method="post" style="display:inline">
+    <input type="hidden" name="action" value="{% if target.account_status == 'active' %}suspend{% else %}activate{% endif %}" />
+    <button type="submit" class="secondary">{% if target.account_status == 'active' %}Suspend{% else %}Activate{% endif %}</button>
+  </form>
+  {% endif %}
+</div>
+{% if calendar %}
+<div class="card">
+  <h2>Calendar</h2>
+  <p>{{ calendar.name }} · revision {{ calendar.revision }}</p>
+  {% if identity %}
+  <p>SEQTA: {{ identity.school_host }} / {{ identity.student_ref }}</p>
+  <form method="post">
+    <input type="hidden" name="action" value="reset_identity" />
+    <div class="field"><label>Type user name to confirm reset</label><input name="confirm_name" /></div>
+    <button type="submit" class="secondary">Reset source identity</button>
+  </form>
+  {% endif %}
+</div>
+<div class="card" data-auto-animate>
+  <h2>Devices</h2>
+  <table>
+    <tr><th>Name</th><th>Status</th><th>Last sync</th></tr>
+    {% for d in devices %}
+    <tr><td>{{ d.name }}</td><td>{{ d.status }}</td><td>{{ format_dt(d.last_synced_at) }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

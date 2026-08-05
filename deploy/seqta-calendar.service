@@ -9,7 +9,7 @@ User=seqta-calendar
 Group=seqta-calendar
 WorkingDirectory=/opt/seqta-calendar/current
 EnvironmentFile=/etc/seqta-calendar.env
-ExecStart=/usr/bin/node dist/main.js
+ExecStart=/opt/seqta-calendar/venv/bin/gunicorn -w 1 -b 127.0.0.1:3210 run:app
 Restart=on-failure
 RestartSec=5
 

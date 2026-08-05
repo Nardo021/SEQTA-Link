@@ -2,166 +2,142 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-**v2.1.1 — Self-hosted SEQTA timetable sync → Apple / Google Calendar (ICS)**
+**v3.1.1 — Flask + SQLite + Jinja portal · SEQTA timetable sync → ICS**
 
-Extract lessons from SEQTA Learn with a Tampermonkey userscript, sync them to a small Fastify backend, and subscribe once in Apple or Google Calendar. Every manual sync updates the same feed — no re-subscribe, no SEQTA credentials on the server.
+Self-hosted SEQTA Learn timetable sync for Apple / Google Calendar. Extract lessons in the browser (Tampermonkey), sync to your server, subscribe once to the ICS feed — no re-subscribe on each sync.
 
-[![Version](https://img.shields.io/badge/version-2.1.1-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-3.1.1-blue.svg)](pyproject.toml)
 [![License: AGPL-3.0 + NC](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20NC-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D24-brightgreen.svg)](package.json)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6.svg)](package.json)
-[![Fastify](https://img.shields.io/badge/Fastify-5-black.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-81%20passing-success.svg)](test/)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg)](pyproject.toml)
+[![Flask](https://img.shields.io/badge/Flask-3-black.svg)](pyproject.toml)
 
-|                            |                          |
-| -------------------------- | ------------------------ |
-| **81** automated tests     | **TypeScript** Fastify 5 |
-| **PostgreSQL** + RLS roles | **RFC 5545** ICS feed    |
-| **Tampermonkey** capture   | **Node 24+** runtime     |
+## Why Seqta Link
+
+| Problem                                    | How this project handles it                   |
+| ------------------------------------------ | --------------------------------------------- |
+| Repeated sync creates duplicate events     | Stable server-side `UID` + natural keys       |
+| Cancelled lessons stay on the calendar     | Deletes only within `complete: true` coverage |
+| Partial week fetch wipes old data          | Incomplete coverage never triggers deletion   |
+| Third-party servers hold SEQTA credentials | Backend never receives SEQTA passwords        |
+| Guessable calendar URLs                    | Opaque feed tokens (`sl_cal_…`)               |
+
+## Architecture
 
 ```mermaid
 flowchart LR
   SEQTA[SEQTA Learn]
-  TM[Tampermonkey<br/>pair + sync]
-  Portal["/app · /admin<br/>session"]
-  API[Fastify<br/>Seqta Link]
-  PG[(PostgreSQL<br/>RLS + seqta_* roles)]
+  TM[Tampermonkey]
+  Portal["/app · /admin<br/>Jinja SSR"]
+  API[Flask · Seqta Link]
+  DB[(SQLite WAL)]
   ICS["GET /calendar/….ics"]
   Cal[Apple / Google Calendar]
 
   SEQTA --> TM
-  TM -->|"POST /api/v1/sync<br/>dvc_ / scu_"| API
+  TM -->|"Bearer sl_dvc_"| API
   Portal -->|"seqta_session"| API
-  API --> PG
-  PG --> ICS
+  API --> DB
+  DB --> ICS
   ICS --> Cal
 ```
 
-npm package: `seqta-link@2.1.1`
+## Stack
 
----
+| Layer         | Technology                                                                         |
+| ------------- | ---------------------------------------------------------------------------------- |
+| Backend       | Flask 3, SQLAlchemy 2, SQLite (WAL)                                                |
+| Portal        | Jinja2 SSR — forms + `flash()`, fetch helpers use Toastify                         |
+| UI motion     | CSS transitions / keyframes, AutoAnimate (lists), View Transition API (navigation) |
+| Sync API      | `/api/v2/*` · device tokens `sl_dvc_…`                                             |
+| Calendar feed | `/calendar/sl_cal_….ics` (ETag / `304`)                                            |
+| Userscript    | Tampermonkey — `script/seqta-calendar-sync.user.js`                                |
+| Tests         | `pytest`                                                                           |
 
-## Why Seqta Link
-
-| Problem                                 | How this project handles it                   |
-| --------------------------------------- | --------------------------------------------- |
-| Duplicate calendar events after re-sync | Server-side stable `UID` + natural keys       |
-| Cancelled lessons sticking around       | Deletes only inside `complete: true` coverage |
-| Partial week failures wiping data       | Incomplete coverage never triggers deletes    |
-| Credentials on a third-party server     | Backend never sees SEQTA passwords or cookies |
-| Guessable calendar URLs                 | Opaque feed tokens (`scc_…`)                  |
-
----
+> **v3 note:** The Node/Fastify/PostgreSQL stack and `/api/v1` are removed. See [docs/api-v2.md](docs/api-v2.md).
 
 ## Features
 
-- **Userscript capture** — reads the SEQTA timetable in-browser; Pair device + Sync
-- **Idempotent sync** — `Idempotency-Key` + PostgreSQL transactions under RLS
-- **Stable ICS** — RFC 5545 for Apple / Google / Android; ETag / `304`; cancelled events retained
-- **Token security** — upload (`scu_…`), device (`dvc_…`), and calendar (`scc_…`) tokens, peppered hashes
-- **Local accounts** — email/password login; invite-only registration; portal `/app` and admin `/admin`
-- **Abuse protection** — rate limits + failed-attempt lockout on login, invite accept, pair, and API token probing
-- **Ops-ready** — `cli init` / `create-feed` / `rotate-token` / `inspect-feed` / `backup` / `bootstrap-owner` / `migrate-v1-sqlite`; PVE + Cloudflare Tunnel templates
-- **Tested core** — unit, integration, and golden ICS fixtures
-
----
+- **Browser extract** — Tampermonkey reads SEQTA timetable; pair device + sync
+- **Idempotent sync** — `Idempotency-Key` + SQLite transactions; per-calendar lock
+- **Stable ICS** — RFC 5545, stable HMAC `UID`, `SEQUENCE`, cancelled retention
+- **Token security** — Device (`sl_dvc_…`) and calendar (`sl_cal_…`) tokens; pepper-hashed at rest
+- **Local accounts** — Email/password login; invite-only registration; `/app` and `/admin` portals
+- **Brute-force guard** — Login and pairing attempt lockout (in-process)
+- **Ops** — Flask CLI: `init-db`, `bootstrap-owner`, `backup`
 
 ## Quick start
 
-**Requirements:** Node.js 24+, npm, [Tampermonkey](https://www.tampermonkey.net/) (embedded PostgreSQL by default — no separate DB install)
+**Requirements:** Python 3.11+, pip
 
 ```bash
 cp .env.example .env
-# Local macOS/dev: set EMBEDDED_PG_DATA_DIR=./data/pg (and EMBEDDED_PG=true)
-npm ci
-# Approve embedded-postgres platform postinstall when prompted
-mkdir -p ./data/pg            # or /var/lib/seqta-calendar/pg
-npm run build
-npm run cli -- init           # interactive .env (secrets, PUBLIC_BASE_URL, owner bootstrap…)
-npm run db:migrate
-# Owner: created by init bootstrap env on first boot, or:
-npm run cli -- bootstrap-owner --email you@example.com --password '…'
+# Generate secrets:
+# python -c "import base64,os; print(base64.b64encode(os.urandom(32)).decode())"
+# Set TOKEN_PEPPER, UID_SECRET, SESSION_SECRET in .env
 
-npm run dev                   # app + embedded Postgres
+pip install -e ".[dev]"
+
+# Optional first-boot owner:
+# OWNER_BOOTSTRAP_EMAIL=you@example.com
+# OWNER_BOOTSTRAP_PASSWORD='…'
+
+python run.py
+# → http://127.0.0.1:3210
 ```
+
+| URL                              | Purpose             |
+| -------------------------------- | ------------------- |
+| `/app/login`                     | User portal sign-in |
+| `/admin/login`                   | Admin sign-in       |
+| [docs/api-v2.md](docs/api-v2.md) | HTTP API reference  |
 
 **Recommended sync path:**
 
-1. Sign in at `/app` → **Devices** → generate a pairing code.
-2. Install `script/seqta-calendar-sync.user.js` in Tampermonkey (see [script/README.md](script/README.md)).
-3. On SEQTA → **Pair device** → enter code + device name → **Sync Timetable**.
-4. Portal → **Calendar** → generate subscription URL → add in [Apple](web/help/apple.html) or [Google](web/help/google.html).
-5. Optional: `/admin` for invitations, user management, audit.
-
-**CLI-provisioned feed (legacy / ops):** still available when you need an upload token without the portal:
+1. Sign in → **Devices** → generate pairing code.
+2. Install `script/seqta-calendar-sync.user.js` in Tampermonkey ([script/README.md](script/README.md)).
+3. Open SEQTA → **Pair device** → enter code → **Sync Timetable**.
+4. Portal → **Calendar** → rotate subscription URL → add to Apple/Google Calendar.
 
 ```bash
-npm run cli -- create-feed \
-  --name "My Timetable" \
-  --school-host "learn.example-school.edu.au" \
-  --student-ref "4284" \
-  --timezone "Australia/Sydney"
+pytest                      # unit + integration tests
+npm run build:userscript      # rebuild userscript from script/src/ (Node optional)
 ```
-
-Legacy upload tokens (`scu_…`) still work via userscript Settings. Device pairing (`dvc_…`) is preferred.
-
-```bash
-npm test                      # unit + integration; real RLS: EMBEDDED_PG=false + DATABASE_URL_TEST
-npm run build:userscript      # rebuild script/seqta-calendar-sync.user.js from script/src/
-```
-
----
 
 ## CLI
 
 ```bash
-npm run cli -- <command> [options]
+flask --app run:app init-db
+flask --app run:app bootstrap-owner
+flask --app run:app backup
 ```
 
-| Command | Purpose |
-| ------- | ------- |
-| `init` | Interactive `.env` (secrets, URLs, owner bootstrap) |
-| `bootstrap-owner` | Create / promote owner when none exists |
-| `create-feed` | Provision user + calendar + upload device (prints tokens once) |
-| `rotate-token` | Rotate upload or calendar token (`--feed <id> --type upload\|calendar`) |
-| `inspect-feed` | Inspect calendar status / event counts |
-| `backup` | `pg_dump` + gzip |
-| `migrate-v1-sqlite` | One-shot import from a v1 SQLite DB |
+## Configuration
 
----
+See [.env.example](.env.example). Production essentials:
 
-## Repository layout
+- `PUBLIC_BASE_URL` — HTTPS public URL
+- `COOKIE_SECURE=true` — required behind HTTPS
+- `TOKEN_PEPPER`, `UID_SECRET`, `SESSION_SECRET` — distinct random base64 (≥32 bytes decoded)
+- `DATABASE_PATH` — SQLite file path (default `./data/seqta.db`)
+- `AUTH_DEV_LOGIN=false` in production
 
-| Path                   | Role                                          |
-| ---------------------- | --------------------------------------------- |
-| `src/`                 | Fastify 5 + PostgreSQL backend                |
-| `src/modules/`         | auth, calendars, sync, devices, me, admin, …  |
-| `database/migrations/` | schema, RLS, DB roles, local-auth grants      |
-| `script/`              | Tampermonkey userscript (source + built file) |
-| `web/`                 | Portal / admin / invite / help static pages   |
-| `docs/`                | API + Proxmox deploy guide                    |
-| `deploy/`              | systemd & Cloudflare Tunnel templates         |
-| `test/`                | Unit, integration, and golden tests           |
+## Deploy
 
-Deploy unit / path names under `/opt/seqta-calendar` are historical and unchanged for existing hosts.
+Single-process app with SQLite — run one instance (WAL + in-process locks). Use **gunicorn** or **waitress** behind HTTPS (Cloudflare Tunnel, reverse proxy, etc.).
 
----
+See [docs/pve_deploy.md](docs/pve_deploy.md) for Proxmox LXC deployment.
 
-## Documentation
+## Project layout
 
-- [docs/api.md](docs/api.md) — HTTP API, tokens, auth, rate limits
-- [docs/pve_deploy.md](docs/pve_deploy.md) — Proxmox VE / Debian LXC deploy guide
-- [web/help/apple.html](web/help/apple.html) / [web/help/google.html](web/help/google.html) — Apple / Google·Android subscribe guides
-- [script/README.md](script/README.md) — userscript install & `sourceKey` rules
-- [.env.example](.env.example) — all environment variables (including lockout knobs)
-
----
+```
+seqta_link/           # Flask app (models, services, blueprints, templates, static)
+run.py                # Dev server entry
+tests/                # pytest
+script/               # Tampermonkey userscript sources + build
+docs/                 # api-v2.md, pve_deploy.md
+deploy/               # systemd unit templates
+```
 
 ## License
 
-This project is licensed under the **GNU Affero General Public License v3.0**, with **additional non-commercial terms**.
-
-- **Open source required:** modifications you distribute or offer as a network service must publish complete corresponding source under the same terms (AGPL-3.0 + these additional terms).
-- **Non-commercial only:** commercial use (including paid hosting or selling derivatives) is not allowed without a separate written license.
-
-See [LICENSE](LICENSE) for the full text.
+See [LICENSE](LICENSE).

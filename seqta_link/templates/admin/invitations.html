@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Invitations · Admin{% endblock %}
+{% block nav %}{% include "partials/nav_admin.html" %}{% endblock %}
+{% block content %}
+<h1>Invitations</h1>
+<div class="card">
+  <form method="post" action="{{ url_for('pages_admin.create_invitation') }}">
+    <div class="field"><label>Expected name</label><input name="expected_name" /></div>
+    <div class="field"><label>Note</label><input name="note" /></div>
+    <div class="field"><label>Expires (hours)</label><input name="expires_hours" type="number" value="72" /></div>
+    <button type="submit">Create invitation</button>
+  </form>
+</div>
+<div class="card" data-auto-animate>
+  <table>
+    <tr><th>Created</th><th>Expires</th><th>Used</th><th></th></tr>
+    {% for inv in invitations %}
+    <tr>
+      <td>{{ format_dt(inv.created_at) }}</td>
+      <td>{{ format_dt(inv.expires_at) }}</td>
+      <td>{{ format_dt(inv.used_at) if inv.used_at else '—' }}</td>
+      <td>
+        {% if not inv.used_at %}
+        <form method="post" action="{{ url_for('pages_admin.delete_invitation', inv_id=inv.id) }}">
+          <button type="submit" class="secondary">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

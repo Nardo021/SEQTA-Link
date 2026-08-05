@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Seqta Link Sync
+// @name         Seqta Link
 // @namespace    https://timetable.leoze.top
-// @version      2.1.1
+// @version      3.1.1
 // @description  Sync SEQTA Learn timetable to Seqta Link (Apple / Google Calendar feed)
 // @author       Leo
 // @match        https://learn.masada.onseqtacloud.com/*
@@ -548,9 +548,9 @@
   /** @param {string} body @param {string} idempotencyKey @param {boolean} [allowEmptySnapshot] */
   async function postSyncPayload(body, idempotencyKey, allowEmptySnapshot = false) {
     const config = loadConfig();
-    const token = config.deviceToken || config.uploadToken;
+    const token = config.deviceToken;
     if (!token) {
-      throw new Error('No device or upload token configured. Pair a device or paste an scu_ token in settings.');
+      throw new Error('No device token configured. Pair a device from the portal first.');
     }
 
     /** @type {Record<string, unknown>} */
@@ -561,7 +561,7 @@
 
     const response = await gmRequest({
       method: 'POST',
-      url: `${config.backendUrl}/api/v1/sync`,
+      url: `${config.backendUrl}/api/v2/sync`,
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -599,7 +599,7 @@
     const config = loadConfig();
     const response = await gmRequest({
       method: 'POST',
-      url: `${config.backendUrl}/api/device/pair`,
+      url: `${config.backendUrl}/api/v2/device/pair`,
       headers: { 'Content-Type': 'application/json' },
       data: JSON.stringify({ code, deviceName }),
     });
@@ -610,8 +610,8 @@
     upsertDeviceProfile({
       name: deviceName,
       deviceToken: parsed.deviceToken,
-      deviceId: parsed.deviceId,
-      calendarLabel: parsed.calendarLabel,
+      deviceId: parsed.deviceId || '',
+      calendarLabel: parsed.calendarLabel || deviceName,
     });
     return parsed;
   }
@@ -619,13 +619,13 @@
   /** @returns {Promise<object>} */
   async function fetchDeviceStatus() {
     const config = loadConfig();
-    const token = config.deviceToken || config.uploadToken;
+    const token = config.deviceToken;
     if (!token) {
       return null;
     }
     const response = await gmRequest({
       method: 'GET',
-      url: `${config.backendUrl}/api/v1/status`,
+      url: `${config.backendUrl}/api/v2/status`,
       headers: { Authorization: `Bearer ${token}` },
     });
     const parsed = response.responseText ? JSON.parse(response.responseText) : null;
@@ -861,7 +861,7 @@ function mountUi() {
     const modal = document.createElement("div");
     modal.className = "scs-modal";
     modal.innerHTML = `
-        <h2>Seqta Link Sync</h2>
+        <h2>Seqta Link</h2>
         <div class="scs-field">
           <label for="scs-backend">Backend URL</label>
           <input id="scs-backend" type="url" placeholder="https://timetable.leoze.top" />
@@ -879,7 +879,7 @@ function mountUi() {
         </div>
         <div class="scs-field">
           <label for="scs-calendar">Calendar URL (optional)</label>
-          <input id="scs-calendar" type="url" placeholder="https://timetable.leoze.top/calendar/scc_….ics" />
+          <input id="scs-calendar" type="url" placeholder="https://timetable.example/calendar/sl_cal_….ics" />
           <small>Apple Calendar subscription link — shown after successful sync.</small>
         </div>
         <div class="scs-field">
@@ -1032,7 +1032,7 @@ function mountUi() {
 
   syncBtn.addEventListener("click", async () => {
     const config = loadConfig();
-    if (!config.deviceToken && !config.uploadToken) {
+    if (!config.deviceToken) {
       setStatus("Pair a device first.", "error");
       openPairModal();
       return;
@@ -1050,7 +1050,7 @@ function mountUi() {
     setStatus("Starting sync…");
 
     try {
-      if (config.deviceToken?.startsWith("dvc_")) {
+      if (config.deviceToken?.startsWith("sl_dvc_")) {
         setStatus("Checking device…");
         await fetchDeviceStatus();
       }
@@ -1093,7 +1093,7 @@ function mountUi() {
   });
 
   const config = loadConfig();
-  if (!config.deviceToken && !config.uploadToken) {
+  if (!config.deviceToken) {
     setStatus("Click Pair device to connect this browser.");
   } else {
     setStatus(`Profile: ${config.calendarLabel}`);

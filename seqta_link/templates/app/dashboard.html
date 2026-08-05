@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Seqta Link{% endblock %}
+{% block nav %}{% include "partials/nav_app.html" %}{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="content-stack">
+  <dl class="grid stat-grid">
+    <div class="card stat-card">
+      <dt class="stat-label">Account</dt>
+      <dd class="stat-value">
+        <span class="status-badge status-badge--{{ user.account_status }}">{{ user.account_status }}</span>
+      </dd>
+    </div>
+    <div class="card stat-card">
+      <dt class="stat-label">Sync</dt>
+      <dd class="stat-value">
+        <span class="status-badge status-badge--{{ 'ok' if user.sync_enabled else 'disabled' }}">{{ 'Enabled' if user.sync_enabled else 'Disabled' }}</span>
+      </dd>
+    </div>
+    <div class="card stat-card">
+      <dt class="stat-label">Feed</dt>
+      <dd class="stat-value">
+        <span class="status-badge status-badge--{{ 'ok' if user.feed_enabled else 'disabled' }}">{{ 'Enabled' if user.feed_enabled else 'Disabled' }}</span>
+      </dd>
+    </div>
+    <div class="card stat-card">
+      <dt class="stat-label">Active events</dt>
+      <dd class="stat-value">{{ active_events }}</dd>
+    </div>
+    <div class="card stat-card">
+      <dt class="stat-label">Devices</dt>
+      <dd class="stat-value">{{ devices }} of {{ max_devices }} paired</dd>
+    </div>
+    <div class="card stat-card">
+      <dt class="stat-label">Last sync</dt>
+      <dd class="stat-value">
+        {% if calendar.last_synced_at %}
+        <time datetime="{{ calendar.last_synced_at.isoformat() }}">{{ format_dt(calendar.last_synced_at) }}</time>
+        {% else %}
+        {{ format_dt(calendar.last_synced_at) }}
+        {% endif %}
+      </dd>
+    </div>
+  </dl>
+  <section class="card" aria-labelledby="calendar-heading">
+    <h2 id="calendar-heading">Calendar</h2>
+    <div class="card-stack">
+      <ul class="meta-list">
+        <li><span class="meta-label">Name</span> <span>{{ calendar.name }}</span></li>
+        <li><span class="meta-label">Revision</span> <span class="mono">{{ calendar.revision }}</span></li>
+        {% if identity %}
+        <li><span class="meta-label">SEQTA student</span> <span class="mono">{{ identity.student_ref }}</span></li>
+        <li><span class="meta-label">School</span> <span>{{ identity.school_host }}</span></li>
+        {% else %}
+        <li class="muted">Source identity will lock on first successful sync.</li>
+        {% endif %}
+      </ul>
+    </div>
+    <nav class="card-actions" aria-label="Calendar actions">
+      <ul class="link-list">
+        <li><a href="{{ url_for('pages_app.devices') }}">Pair a browser</a></li>
+        <li><a href="{{ url_for('pages_app.calendar_page') }}">Calendar subscription</a></li>
+        <li><a href="{{ url_for('pages_app.sync_history') }}">Sync history</a></li>
+      </ul>
+    </nav>
+  </section>
+</div>
+{% endblock %}

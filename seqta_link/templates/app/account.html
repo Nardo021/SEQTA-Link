@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Account · Seqta Link{% endblock %}
+{% block nav %}{% include "partials/nav_app.html" %}{% endblock %}
+{% block content %}
+<h1>Account</h1>
+<div class="card">
+  <p><strong>{{ user.display_name }}</strong> · {{ user.email }}</p>
+  <form method="post">
+    <input type="hidden" name="action" value="preferences" />
+    <div class="field">
+      <label for="calendar_name">Calendar name</label>
+      <input id="calendar_name" name="calendar_name" value="{{ calendar.name }}" />
+    </div>
+    <button type="submit">Save preferences</button>
+  </form>
+</div>
+<div class="card">
+  <h2>Change password</h2>
+  <form method="post">
+    <input type="hidden" name="action" value="password" />
+    <div class="field"><label for="current_password">Current password</label><input id="current_password" name="current_password" type="password" required /></div>
+    <div class="field"><label for="new_password">New password</label><input id="new_password" name="new_password" type="password" required minlength="8" /></div>
+    <button type="submit">Update password</button>
+  </form>
+</div>
+{% endblock %}

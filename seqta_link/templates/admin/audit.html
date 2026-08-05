@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Audit · Admin{% endblock %}
+{% block nav %}{% include "partials/nav_admin.html" %}{% endblock %}
+{% block content %}
+<h1>Audit logs</h1>
+<div class="card" data-auto-animate>
+  <table>
+    <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr>
+    {% for l in logs %}
+    <tr>
+      <td>{{ format_dt(l.created_at) }}</td>
+      <td>{{ l.actor_type }}</td>
+      <td class="mono">{{ l.action }}</td>
+      <td>{{ l.target_user_id or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

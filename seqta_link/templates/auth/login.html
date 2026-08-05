@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Seqta Link{% endblock %}
+{% block content %}
+<h1>{% if admin %}Admin sign in{% else %}Sign in{% endif %}</h1>
+<div class="card">
+  <form method="post" action="">
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="username" required />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+    </div>
+    <button type="submit">Sign in</button>
+  </form>
+  {% if not admin %}
+  <p class="muted">New here? You need an invitation link from an administrator.</p>
+  <p class="muted"><a href="{{ url_for('auth.admin_login') }}">Admin sign in</a></p>
+  {% else %}
+  <p class="muted"><a href="{{ url_for('auth.login') }}">User portal sign in</a></p>
+  {% endif %}
+</div>
+{% endblock %}

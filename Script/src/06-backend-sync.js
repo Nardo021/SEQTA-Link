@@ -34,9 +34,9 @@
   /** @param {string} body @param {string} idempotencyKey @param {boolean} [allowEmptySnapshot] */
   async function postSyncPayload(body, idempotencyKey, allowEmptySnapshot = false) {
     const config = loadConfig();
-    const token = config.deviceToken || config.uploadToken;
+    const token = config.deviceToken;
     if (!token) {
-      throw new Error('No device or upload token configured. Pair a device or paste an scu_ token in settings.');
+      throw new Error('No device token configured. Pair a device from the portal first.');
     }
 
     /** @type {Record<string, unknown>} */
@@ -47,7 +47,7 @@
 
     const response = await gmRequest({
       method: 'POST',
-      url: `${config.backendUrl}/api/v1/sync`,
+      url: `${config.backendUrl}/api/v2/sync`,
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -85,7 +85,7 @@
     const config = loadConfig();
     const response = await gmRequest({
       method: 'POST',
-      url: `${config.backendUrl}/api/device/pair`,
+      url: `${config.backendUrl}/api/v2/device/pair`,
       headers: { 'Content-Type': 'application/json' },
       data: JSON.stringify({ code, deviceName }),
     });
@@ -96,8 +96,8 @@
     upsertDeviceProfile({
       name: deviceName,
       deviceToken: parsed.deviceToken,
-      deviceId: parsed.deviceId,
-      calendarLabel: parsed.calendarLabel,
+      deviceId: parsed.deviceId || '',
+      calendarLabel: parsed.calendarLabel || deviceName,
     });
     return parsed;
   }
@@ -105,13 +105,13 @@
   /** @returns {Promise<object>} */
   async function fetchDeviceStatus() {
     const config = loadConfig();
-    const token = config.deviceToken || config.uploadToken;
+    const token = config.deviceToken;
     if (!token) {
       return null;
     }
     const response = await gmRequest({
       method: 'GET',
-      url: `${config.backendUrl}/api/v1/status`,
+      url: `${config.backendUrl}/api/v2/status`,
       headers: { Authorization: `Bearer ${token}` },
     });
     const parsed = response.responseText ? JSON.parse(response.responseText) : null;

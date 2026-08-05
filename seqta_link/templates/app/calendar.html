@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Calendar · Seqta Link{% endblock %}
+{% block nav %}{% include "partials/nav_app.html" %}{% endblock %}
+{% block content %}
+<h1>Calendar subscription</h1>
+<div class="card">
+  <p><strong>{{ calendar.name }}</strong> · {{ calendar.timezone }}</p>
+  <p>Revision: {{ calendar.revision }}</p>
+  {% if feed_enabled and token_prefix %}
+  <p>Token prefix: <span class="mono">{{ token_prefix }}…</span></p>
+  <p class="muted">Rotate to reveal a new subscription URL (shown once via flash message).</p>
+  <form method="post" action="{{ url_for('pages_app.rotate_calendar') }}">
+    <button type="submit">Rotate subscription URL</button>
+  </form>
+  {% elif not feed_enabled %}
+  <p class="error">Feed is disabled for your account.</p>
+  {% endif %}
+</div>
+{% endblock %}

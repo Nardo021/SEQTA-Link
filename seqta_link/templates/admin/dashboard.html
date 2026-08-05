@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block nav %}{% include "partials/nav_admin.html" %}{% endblock %}
+{% block content %}
+<h1>Admin Dashboard</h1>
+<div class="content-stack">
+  <dl class="grid stat-grid">
+    <div class="card stat-card">
+      <dt class="stat-label">Total users</dt>
+      <dd class="stat-value">{{ total }}</dd>
+    </div>
+    <div class="card stat-card">
+      <dt class="stat-label">Active</dt>
+      <dd class="stat-value">{{ active }}</dd>
+    </div>
+    <div class="card stat-card">
+      <dt class="stat-label">Suspended</dt>
+      <dd class="stat-value">{{ suspended }}</dd>
+    </div>
+    <div class="card stat-card">
+      <dt class="stat-label">Pending invites</dt>
+      <dd class="stat-value">{{ pending }}</dd>
+    </div>
+  </dl>
+  <section class="card" aria-labelledby="admin-actions-heading">
+    <h2 id="admin-actions-heading">Quick links</h2>
+    <nav aria-label="Administration shortcuts">
+      <ul class="link-list">
+        <li><a href="{{ url_for('pages_admin.users') }}">Manage users</a></li>
+        <li><a href="{{ url_for('pages_admin.invitations') }}">Invitations</a></li>
+        <li><a href="{{ url_for('pages_admin.audit') }}">Audit logs</a></li>
+      </ul>
+    </nav>
+  </section>
+  <section class="card" aria-labelledby="recent-audit-heading">
+    <h2 id="recent-audit-heading">Recent audit</h2>
+    <div class="table-wrap" data-auto-animate>
+      {% if recent %}
+      <table>
+        <caption class="visually-hidden">Recent audit events</caption>
+        <thead>
+          <tr>
+            <th scope="col">Time</th>
+            <th scope="col">Action</th>
+            <th scope="col">Target</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in recent %}
+          <tr>
+            <td><time datetime="{{ l.created_at.isoformat() }}">{{ format_dt(l.created_at) }}</time></td>
+            <td class="mono">{{ l.action }}</td>
+            <td>{% if l.target_user_id %}{{ l.target_user_id }}{% else %}<span aria-hidden="true">—</span><span class="visually-hidden">No target</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No audit events yet.</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

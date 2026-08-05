@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Seqta Link{% endblock %}
+{% block content %}
+<h1>Seqta Link</h1>
+<p class="muted">Self-hosted SEQTA timetable sync → Apple / Google Calendar</p>
+<p>
+  {% if logged_in %}
+  <a class="btn" href="{{ url_for('pages_app.dashboard') }}">Go to Portal</a>
+  {% else %}
+  <a class="btn" href="{{ url_for('auth.login') }}">Sign in to Portal</a>
+  {% endif %}
+</p>
+<p><a href="{{ url_for('auth.admin_login') }}">Admin sign in</a></p>
+{% endblock %}

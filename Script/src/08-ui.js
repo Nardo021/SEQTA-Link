@@ -112,7 +112,7 @@ function mountUi() {
     const modal = document.createElement("div");
     modal.className = "scs-modal";
     modal.innerHTML = `
-        <h2>Seqta Link Sync</h2>
+        <h2>Seqta Link</h2>
         <div class="scs-field">
           <label for="scs-backend">Backend URL</label>
           <input id="scs-backend" type="url" placeholder="https://timetable.leoze.top" />
@@ -130,7 +130,7 @@ function mountUi() {
         </div>
         <div class="scs-field">
           <label for="scs-calendar">Calendar URL (optional)</label>
-          <input id="scs-calendar" type="url" placeholder="https://timetable.leoze.top/calendar/scc_….ics" />
+          <input id="scs-calendar" type="url" placeholder="https://timetable.example/calendar/sl_cal_….ics" />
           <small>Apple Calendar subscription link — shown after successful sync.</small>
         </div>
         <div class="scs-field">
@@ -283,7 +283,7 @@ function mountUi() {
 
   syncBtn.addEventListener("click", async () => {
     const config = loadConfig();
-    if (!config.deviceToken && !config.uploadToken) {
+    if (!config.deviceToken) {
       setStatus("Pair a device first.", "error");
       openPairModal();
       return;
@@ -301,7 +301,7 @@ function mountUi() {
     setStatus("Starting sync…");
 
     try {
-      if (config.deviceToken?.startsWith("dvc_")) {
+      if (config.deviceToken?.startsWith("sl_dvc_")) {
         setStatus("Checking device…");
         await fetchDeviceStatus();
       }
@@ -344,7 +344,7 @@ function mountUi() {
   });
 
   const config = loadConfig();
-  if (!config.deviceToken && !config.uploadToken) {
+  if (!config.deviceToken) {
     setStatus("Click Pair device to connect this browser.");
   } else {
     setStatus(`Profile: ${config.calendarLabel}`);

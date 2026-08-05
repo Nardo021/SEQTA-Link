@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Users · Admin{% endblock %}
+{% block nav %}{% include "partials/nav_admin.html" %}{% endblock %}
+{% block content %}
+<h1>Users</h1>
+<div class="card" data-auto-animate>
+  <table>
+    <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.display_name }}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ u.role }}</td>
+      <td>{{ u.account_status }}</td>
+      <td><a href="{{ url_for('pages_admin.user_detail', user_id=u.id) }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

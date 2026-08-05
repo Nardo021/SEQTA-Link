@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Sync history · Seqta Link{% endblock %}
+{% block nav %}{% include "partials/nav_app.html" %}{% endblock %}
+{% block content %}
+<h1>Sync history</h1>
+<div class="card" data-auto-animate>
+  {% if runs %}
+  <table>
+    <tr><th>Started</th><th>Status</th><th>Received</th><th>Inserted</th><th>Updated</th><th>Removed</th></tr>
+    {% for r in runs %}
+    <tr>
+      <td>{{ format_dt(r.started_at) }}</td>
+      <td>{{ r.status }}</td>
+      <td>{{ r.received_count }}</td>
+      <td>{{ r.inserted_count }}</td>
+      <td>{{ r.updated_count }}</td>
+      <td>{{ r.removed_count }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No sync runs yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

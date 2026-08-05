@@ -8,4 +8,4 @@ User=seqta-calendar
 Group=seqta-calendar
 WorkingDirectory=/opt/seqta-calendar/current
 EnvironmentFile=/etc/seqta-calendar.env
-ExecStart=/usr/bin/npm run cli -- backup --output /var/backups/seqta-calendar
+ExecStart=/opt/seqta-calendar/venv/bin/flask --app run:app backup

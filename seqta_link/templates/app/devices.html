@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Devices · Seqta Link{% endblock %}
+{% block nav %}{% include "partials/nav_app.html" %}{% endblock %}
+{% block content %}
+<h1>Devices</h1>
+<div class="card">
+  <form method="post" action="{{ url_for('pages_app.create_pairing_code') }}">
+    <button type="submit">Generate pairing code</button>
+  </form>
+</div>
+<div class="card">
+  <h2>Pending pairing codes</h2>
+  <div data-auto-animate>
+    {% if codes %}
+    <table>
+      <tr><th>Expires</th><th></th></tr>
+      {% for c in codes %}
+      <tr>
+        <td>{{ format_dt(c.expires_at) }}</td>
+        <td>
+          <form method="post" action="{{ url_for('pages_app.delete_pairing_code', code_id=c.id) }}">
+            <button type="submit" class="secondary">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">No pending codes.</p>
+    {% endif %}
+  </div>
+</div>
+<div class="card">
+  <h2>Devices</h2>
+  <div data-auto-animate>
+    {% if devices %}
+    <table>
+      <tr><th>Name</th><th>Status</th><th>Last sync</th><th></th></tr>
+      {% for d in devices %}
+      <tr>
+        <td>{{ d.name }}</td>
+        <td>{{ d.status }}</td>
+        <td>{{ format_dt(d.last_synced_at) }}</td>
+        <td>
+          {% if d.status == 'active' %}
+          <form method="post" action="{{ url_for('pages_app.revoke_device', device_id=d.id) }}">
+            <button type="submit" class="secondary">Revoke</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">No devices paired yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

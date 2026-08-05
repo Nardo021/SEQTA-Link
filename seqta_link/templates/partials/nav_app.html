@@ -1,0 +1,12 @@
+<nav class="nav" aria-label="User account">
+  {% set ep = request.endpoint or '' %}
+  <a href="{{ url_for('pages_app.dashboard') }}" class="{% if ep == 'pages_app.dashboard' %}active{% endif %}"{% if ep == 'pages_app.dashboard' %} aria-current="page"{% endif %}>Dashboard</a>
+  <a href="{{ url_for('pages_app.timetable') }}" class="{% if ep == 'pages_app.timetable' %}active{% endif %}"{% if ep == 'pages_app.timetable' %} aria-current="page"{% endif %}>Timetable</a>
+  <a href="{{ url_for('pages_app.calendar_page') }}" class="{% if ep == 'pages_app.calendar_page' %}active{% endif %}"{% if ep == 'pages_app.calendar_page' %} aria-current="page"{% endif %}>Calendar</a>
+  <a href="{{ url_for('pages_app.devices') }}" class="{% if ep == 'pages_app.devices' %}active{% endif %}"{% if ep == 'pages_app.devices' %} aria-current="page"{% endif %}>Devices</a>
+  <a href="{{ url_for('pages_app.sync_history') }}" class="{% if ep == 'pages_app.sync_history' %}active{% endif %}"{% if ep == 'pages_app.sync_history' %} aria-current="page"{% endif %}>Sync history</a>
+  <a href="{{ url_for('pages_app.account') }}" class="{% if ep == 'pages_app.account' %}active{% endif %}"{% if ep == 'pages_app.account' %} aria-current="page"{% endif %}>Account</a>
+  <form action="{{ url_for('auth.logout') }}" method="post" class="nav-form nav-form-end">
+    <button type="submit" class="secondary">Sign out</button>
+  </form>
+</nav>

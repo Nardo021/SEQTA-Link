@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Timetable · Seqta Link{% endblock %}
+{% block nav %}{% include "partials/nav_app.html" %}{% endblock %}
+{% block content %}
+<h1>Timetable</h1>
+<div class="card">
+  <form method="get" class="grid">
+    <div class="field"><label for="from">From</label><input id="from" name="from" type="date" value="{{ from_date }}" /></div>
+    <div class="field"><label for="until">Until</label><input id="until" name="until" type="date" value="{{ until_date }}" /></div>
+    <div class="field" style="align-self:end"><button type="submit">Load</button></div>
+  </form>
+</div>
+<div class="card" data-auto-animate>
+  {% if events %}
+  <table>
+    <tr><th>Date</th><th>Period</th><th>Title</th><th>Room</th><th>Start (UTC)</th></tr>
+    {% for e in events %}
+    <tr>
+      <td>{{ e.local_date }}</td>
+      <td>{{ e.period_key }}</td>
+      <td>{{ e.title }}</td>
+      <td>{{ e.room or '—' }}</td>
+      <td class="mono">{{ e.starts_at_utc }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No events in this range.</p>
+  {% endif %}
+</div>
+{% endblock %}

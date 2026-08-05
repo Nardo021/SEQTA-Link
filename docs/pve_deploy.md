@@ -1,12 +1,12 @@
 # Seqta Link — Proxmox VE 部署指南
 
-在 **Proxmox VE** 的 **Debian LXC** 上部署 **Seqta Link v2.1.1**（内嵌 PostgreSQL，一条命令启动）。
+在 **Proxmox VE** 的 **Debian LXC** 上部署 **Seqta Link v3.1.1**（Flask + SQLite，单进程）。
 
-**相关文档：** [docs/api.md](api.md) · [script/README.md](../script/README.md) · [.env.example](../.env.example)
+**相关文档：** [docs/api-v2.md](api-v2.md) · [script/README.md](../script/README.md) · [.env.example](../.env.example)
 
-> **命名说明：** 产品名为 Seqta Link（npm：`seqta-link`）。下文中的 `/opt/seqta-calendar`、`seqta-calendar.service` 等为部署路径 / 单元历史命名，可继续沿用，无需为升级强行改路径。
+> **命名说明：** 产品名为 Seqta Link。下文 `/opt/seqta-calendar`、`seqta-calendar.service` 等为历史部署路径，可继续沿用。
 
-> **Shell 前提：** LXC 里通常已经是 **root**（`pct enter` / 控制台登录）。本文命令按 **已在 root 下** 编写，**不要再套 `sudo`**（许多容器未装 `sudo`，会直接报错）。需要以 `seqta` 用户跑 npm/cli 时，用 `runuser -u seqta -- …`。
+> **Shell 前提：** LXC 内通常为 **root**。命令按 root 编写；需要以 `seqta-calendar` 用户运行时，用 `runuser -u seqta-calendar -- …`。
 
 ---
 
@@ -14,159 +14,165 @@
 
 ```text
 Internet → Cloudflare Tunnel → LXC (127.0.0.1:3210)
-                                 ├── Node 应用 (systemd) — Seqta Link
-                                 └── 内嵌 PostgreSQL
-                                       数据目录: /var/lib/seqta-calendar/pg
+                                 └── gunicorn (systemd)
+                                       └── Flask + SQLite (WAL)
+                                             DATABASE_PATH=/var/lib/seqta-calendar/seqta.db
 ```
 
-| 路径 | 用途 |
-|------|------|
-| `/opt/seqta-calendar/current` | 应用代码 |
-| `/var/lib/seqta-calendar/pg` | 内嵌 Postgres 数据（`EMBEDDED_PG_DATA_DIR`） |
-| `/etc/seqta-calendar.env` | 环境变量 |
-| `/var/backups/seqta-calendar` | `pg_dump` 备份 |
-
-也可 `EMBEDDED_PG=false` + `DATABASE_URL` 使用外部 Postgres。
+| 路径                               | 用途                             |
+| ---------------------------------- | -------------------------------- |
+| `/opt/seqta-calendar/current`      | 应用代码 + Python venv           |
+| `/var/lib/seqta-calendar/seqta.db` | SQLite 数据库（`DATABASE_PATH`） |
+| `/etc/seqta-calendar.env`          | 环境变量                         |
+| `/var/backups/seqta-calendar`      | `flask backup` 复制的数据库文件  |
 
 模板：`deploy/seqta-calendar.service`、`deploy/cloudflared-example.yml`、`deploy/seqta-calendar-backup.timer`。
+
+> v3 使用 SQLite，**不再**需要内嵌/外部 PostgreSQL 或 `pg_dump`。
 
 ---
 
 ## 2. LXC 与系统依赖
 
-推荐：Debian 13、1 vCPU、1–2 GB RAM、unprivileged LXC、Node.js 24 LTS。
+推荐：Debian 12/13、1 vCPU、512 MB–1 GB RAM、unprivileged LXC、**Python 3.11+**。
 
 ```bash
-# 已是 root
-apt update && apt install -y curl ca-certificates gnupg
-# 按 NodeSource / 发行版文档安装 Node 24
-node -v   # v24.x
+apt update && apt install -y python3 python3-venv python3-pip curl ca-certificates
+python3 --version   # 3.11+
 ```
 
 创建运行用户与目录：
 
 ```bash
-useradd --system --home /opt/seqta-calendar --shell /usr/sbin/nologin seqta
-mkdir -p /opt/seqta-calendar /var/lib/seqta-calendar/pg /var/backups/seqta-calendar
-chown -R seqta:seqta /opt/seqta-calendar /var/lib/seqta-calendar /var/backups/seqta-calendar
+useradd --system --home /opt/seqta-calendar --shell /usr/sbin/nologin seqta-calendar
+mkdir -p /opt/seqta-calendar /var/lib/seqta-calendar /var/backups/seqta-calendar
+chown -R seqta-calendar:seqta-calendar /opt/seqta-calendar /var/lib/seqta-calendar /var/backups/seqta-calendar
 ```
 
 ---
 
 ## 3. 部署应用
 
-```bash
-# 以部署流程将仓库放到 /opt/seqta-calendar/current
-cd /opt/seqta-calendar/current
-runuser -u seqta -- npm ci
-# 首次需允许 embedded-postgres 对应平台包的 postinstall（如 linux-x64）
-runuser -u seqta -- npm run build
-```
-
-交互式初始化（推荐，会写环境文件 + `.seqta-initialized` 标记，防误覆盖）：
+将仓库放到 `/opt/seqta-calendar/current`，创建虚拟环境并安装：
 
 ```bash
 cd /opt/seqta-calendar/current
-runuser -u seqta -- npm run cli -- init --env /etc/seqta-calendar.env
-# 按提示输入公开链接、学校域名、管理员邮箱/密码等
-# 密钥可留空自动生成；保存前会总览并要求 yes/no
+python3 -m venv /opt/seqta-calendar/venv
+runuser -u seqta-calendar -- /opt/seqta-calendar/venv/bin/pip install -e .
 ```
 
-若 `init` 需写 `/etc/seqta-calendar.env` 而权限不足，可先以 root 建文件再改属主：
+配置环境文件：
 
 ```bash
-touch /etc/seqta-calendar.env
-chown seqta:seqta /etc/seqta-calendar.env
+cp .env.example /etc/seqta-calendar.env
 chmod 600 /etc/seqta-calendar.env
+chown seqta-calendar:seqta-calendar /etc/seqta-calendar.env
 ```
 
-也可手动从 `.env.example` 复制后编辑。生产必须设置：
+编辑 `/etc/seqta-calendar.env`，生产必须设置：
 
-- `SESSION_SECRET`（与 `TOKEN_PEPPER` 不同，至少 32 字节 base64）
-- `TOKEN_PEPPER` / `UID_SECRET`（互不相同）
-- `PUBLIC_BASE_URL`、`ALLOWED_ORIGINS`
-- `AUTH_DEV_LOGIN=false`
+| 变量                                             | 说明                               |
+| ------------------------------------------------ | ---------------------------------- |
+| `PUBLIC_BASE_URL`                                | 公网 HTTPS 地址                    |
+| `DATABASE_PATH`                                  | `/var/lib/seqta-calendar/seqta.db` |
+| `TOKEN_PEPPER` / `UID_SECRET` / `SESSION_SECRET` | 互不相同，base64 ≥32 字节          |
+| `COOKIE_SECURE`                                  | `true`                             |
+| `AUTH_DEV_LOGIN`                                 | `false`                            |
+| `HOST`                                           | `127.0.0.1`                        |
+| `PORT`                                           | `3210`                             |
 
-然后：
+初始化数据库与 owner：
 
 ```bash
-runuser -u seqta -- npm run db:migrate
-# init 已写 OWNER_BOOTSTRAP_* 时，首次启动会建 owner；也可：
-runuser -u seqta -- npm run cli -- bootstrap-owner \
-  --email you@example.com --password '…'
+cd /opt/seqta-calendar/current
+set -a && source /etc/seqta-calendar.env && set +a
+
+runuser -u seqta-calendar -- /opt/seqta-calendar/venv/bin/flask --app run:app init-db
+runuser -u seqta-calendar -- /opt/seqta-calendar/venv/bin/flask --app run:app bootstrap-owner
+# 按提示输入邮箱与密码
 ```
 
-启用 systemd（见 `deploy/seqta-calendar.service`，Description 为 Seqta Link），监听 `127.0.0.1:3210`。经 Cloudflare Tunnel 对外暴露 HTTPS。
+启用 systemd（`deploy/seqta-calendar.service` 示例）：
 
-从 **v1 SQLite** 迁移时，在新库 migrate 之后使用：
+```ini
+ExecStart=/opt/seqta-calendar/venv/bin/gunicorn -w 1 -b 127.0.0.1:3210 run:app
+```
 
 ```bash
-runuser -u seqta -- npm run cli -- migrate-v1-sqlite \
-  --db /path/to/calendar.sqlite \
-  --owner-name "Leo" \
-  --out /var/backups/seqta-calendar/migration-output
+cp deploy/seqta-calendar.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now seqta-calendar
 ```
+
+经 Cloudflare Tunnel 将 HTTPS 流量转发到 `127.0.0.1:3210`。
 
 ---
 
 ## 4. 日常运维
 
-**CLI 一览：**
+**CLI 一览（Flask）：**
 
-| 命令 | 用途 |
-|------|------|
-| `init` | 交互式写环境文件 |
-| `bootstrap-owner` | 创建 / 提升 owner |
-| `create-feed` | 运维侧创建用户 + 日历 + `scu_` 上传设备 |
-| `rotate-token` | 轮换 upload / calendar token |
-| `inspect-feed` | 检查日历状态 |
-| `backup` | `pg_dump` |
-| `migrate-v1-sqlite` | v1 SQLite → v2 |
+| 命令                                  | 用途                              |
+| ------------------------------------- | --------------------------------- |
+| `flask --app run:app init-db`         | 创建 SQLite 表 + WAL              |
+| `flask --app run:app bootstrap-owner` | 创建 owner 账号                   |
+| `flask --app run:app backup`          | 复制数据库到 `backups/seqta-*.db` |
 
-以下均在 **root** 下执行，通过 `runuser` 降权到 `seqta`：
-
-**创建课表（CLI，角色为普通 user，不是 owner）：**
+**备份示例：**
 
 ```bash
 cd /opt/seqta-calendar/current
-runuser -u seqta -- npm run cli -- create-feed \
-  --name "My Timetable" \
-  --school-host "learn.example.edu.au" \
-  --student-ref "4284"
+set -a && source /etc/seqta-calendar.env && set +a
+runuser -u seqta-calendar -- /opt/seqta-calendar/venv/bin/flask --app run:app backup
+# 可将 backups/ 下文件 rsync 到 /var/backups/seqta-calendar
 ```
 
-**备份（需主机有 `pg_dump`）：**
+定时备份可修改 `deploy/seqta-calendar-backup.service` 为：
 
-```bash
-cd /opt/seqta-calendar/current
-runuser -u seqta -- npm run cli -- backup --output /var/backups/seqta-calendar
+```ini
+ExecStart=/opt/seqta-calendar/venv/bin/flask --app run:app backup
+WorkingDirectory=/opt/seqta-calendar/current
+EnvironmentFile=/etc/seqta-calendar.env
 ```
-
-定时器见 `deploy/seqta-calendar-backup.timer`。
 
 **健康检查：**
 
 - `GET /health/live` → 进程存活
-- `GET /health/ready` → Postgres、migrations、角色池
+- `GET /health/ready` → SQLite 可连接
 
-**账号：** 本地邮箱密码；新用户必须邀请注册（`/admin` 发邀请 → `/invite.html`）。Owner 仅通过 `bootstrap-owner`（或首次启动且同时设置 `OWNER_BOOTSTRAP_EMAIL` + `OWNER_BOOTSTRAP_PASSWORD` 且库中尚无 owner）。登录不会自动提权。
+**账号：** 本地邮箱密码；新用户必须邀请（`/admin/invitations` → 邀请链接 `/invite?token=…`）。Owner 通过 `bootstrap-owner` 或首次启动时的 `OWNER_BOOTSTRAP_*` 创建。
 
-**门户：** `/app` 用户端（Dashboard / Devices 配对 / Calendar 订阅 / Sync history / Account）；`/admin` 管理端（用户管理、Sync/Feed 开关、课表查看、设备撤销、邀请、审计日志）。
+**门户：**
 
-**同学接入：** Portal → Devices 生成配对码 → Tampermonkey **Pair device** → Sync（`/api/v1/sync`）→ Calendar 页生成订阅 URL → [Apple](../web/help/apple.html) / [Google·Android](../web/help/google.html) 订阅说明。
+| 路径     | 功能                                                          |
+| -------- | ------------------------------------------------------------- |
+| `/app`   | Dashboard、Devices 配对、Calendar 订阅、Sync history、Account |
+| `/admin` | 用户管理、邀请、审计日志                                      |
+
+**同学接入：** Portal → Devices 生成配对码 → Tampermonkey **Pair device** → Sync（`POST /api/v2/sync`）→ Calendar 页轮换订阅 URL → Apple/Google 日历 URL 订阅。
 
 ---
 
 ## 5. 安全要点
 
-- 服务只绑 loopback；公网走 Tunnel
-- Token / Calendar URL 只显示一次；库内仅存 hash
-- 日志脱敏 Authorization 与 calendar 路径
-- 生产关闭 `AUTH_DEV_LOGIN`；生产强制 `SESSION_SECRET`
-- 登录 / 邀请注册 / 设备配对 / API Token 探测有限流与失败锁定（`AUTH_LOGIN_*`、`AUTH_REGISTER_*`、`API_AUTH_*`，见 `.env.example` 与 [api.md](api.md)）
-- 锁定状态在进程内存中；多实例需自行加网关限流或共享层
-- 定期备份 `EMBEDDED_PG_DATA_DIR` 与 `/etc/seqta-calendar.env`（含 pepper/secrets）
+- 服务只绑 loopback；公网走 Tunnel / 反向代理
+- Token / Calendar URL 轮换后只通过 flash 显示一次；库内仅存 hash
+- 生产 `COOKIE_SECURE=true`；HTTP 下 cookie 不会写入
+- 登录与配对有失败锁定（进程内存；单实例部署）
+- 定期备份 `DATABASE_PATH` 与 `/etc/seqta-calendar.env`（含 pepper/secrets）
+- SQLite 单写者：不要水平扩展多个 gunicorn worker 写同一库（`-w 1`）
 
 ---
 
-_文档版本：Seqta Link 2.1.1 · 内嵌 / 外部 PostgreSQL · root 下部署（无 sudo）· 本地认证与防爆破_
+## 6. 从 v2（Node/Postgres）迁移
+
+v3 是全新栈，无自动迁移工具。建议：
+
+1. 在新 LXC 部署 v3。
+2. 用户重新注册（邀请）并重新配对设备。
+3. Tampermonkey 更新为 v3 userscript（`/api/v2/*`，`sl_dvc_` 令牌）。
+4. 旧 Postgres 数据可归档备份，不导入 SQLite。
+
+---
+
+_文档版本：Seqta Link 3.1.1 · Flask + SQLite · gunicorn · root 下部署_

@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Seqta Link Sync
+// @name         Seqta Link
 // @namespace    https://timetable.leoze.top
-// @version      2.1.1
+// @version      3.1.1
 // @description  Sync SEQTA Learn timetable to Seqta Link (Apple / Google Calendar feed)
 // @author       Leo
 // @match        https://learn.masada.onseqtacloud.com/*
