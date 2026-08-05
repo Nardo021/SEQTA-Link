@@ -1,6 +1,6 @@
 {
   "name": "seqta-link-userscript",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "private": true,
   "description": "Build tooling for Seqta Link Tampermonkey userscript",
   "scripts": {

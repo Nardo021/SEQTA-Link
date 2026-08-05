@@ -1,6 +1,6 @@
 # Seqta Link — HTTP API v2
 
-**Product:** Seqta Link **v3.1.1** (Flask + SQLite)  
+**Product:** Seqta Link **v3.1.2** (Flask + SQLite)  
 Base URL example: `https://timetable.example.com` or `http://127.0.0.1:3210`
 
 This document is the **only supported API**. v1 (`/api/v1/*`, `scu_` / `dvc_` / `scc_` prefixes) was removed in v3.
@@ -227,4 +227,4 @@ Common codes: `UNAUTHORIZED`, `FORBIDDEN`, `INVALID_TOKEN`, `INVALID_REQUEST`, `
 
 ---
 
-_Document version: Seqta Link 3.1.1_
+_Document version: Seqta Link 3.1.2_

@@ -2,11 +2,11 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-**v3.1.1 — Flask + SQLite + Jinja 门户 · SEQTA 课表同步 → ICS**
+**v3.1.2 — Flask + SQLite + Jinja 门户 · SEQTA 课表同步 → ICS**
 
 自托管 SEQTA Learn 课表同步，订阅 Apple / Google 日历。浏览器（Tampermonkey）抓取课表，同步到服务端，ICS 订阅一次即可，后续同步自动更新同一 Feed。
 
-[![Version](https://img.shields.io/badge/version-3.1.1-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-3.1.2-blue.svg)](pyproject.toml)
 [![License: AGPL-3.0 + NC](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20NC-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg)](pyproject.toml)
 [![Flask](https://img.shields.io/badge/Flask-3-black.svg)](pyproject.toml)

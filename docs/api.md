@@ -18,4 +18,4 @@ If you maintain an old userscript or client, upgrade to **Seqta Link v3** (`scri
 
 ---
 
-_Document version: Seqta Link 3.1.1 — legacy pointer only_
+_Document version: Seqta Link 3.1.2 — legacy pointer only_

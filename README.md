@@ -2,11 +2,11 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-**v3.1.1 — Flask + SQLite + Jinja portal · SEQTA timetable sync → ICS**
+**v3.1.2 — Flask + SQLite + Jinja portal · SEQTA timetable sync → ICS**
 
 Self-hosted SEQTA Learn timetable sync for Apple / Google Calendar. Extract lessons in the browser (Tampermonkey), sync to your server, subscribe once to the ICS feed — no re-subscribe on each sync.
 
-[![Version](https://img.shields.io/badge/version-3.1.1-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-3.1.2-blue.svg)](pyproject.toml)
 [![License: AGPL-3.0 + NC](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20NC-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg)](pyproject.toml)
 [![Flask](https://img.shields.io/badge/Flask-3-black.svg)](pyproject.toml)

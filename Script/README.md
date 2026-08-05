@@ -1,6 +1,6 @@
 # Seqta Link (Tampermonkey)
 
-**Userscript v3.1.1** for [Seqta Link](../README.md) — extracts your SEQTA Learn timetable and uploads it to the backend.
+**Userscript v3.1.2** for [Seqta Link](../README.md) — extracts your SEQTA Learn timetable and uploads it to the backend.
 
 **Path:** Portal pairing code → Device Token (`sl_dvc_…`) → `POST /api/v2/sync` / `GET /api/v2/status`.
 
@@ -32,7 +32,7 @@ Multiple profiles can be stored locally; Sync asks you to confirm the current SE
 
 ## Prerequisites
 
-1. Running Seqta Link **v3.1.1+** with an account (invite or owner bootstrap).
+1. Running Seqta Link **v3.1.2+** with an account (invite or owner bootstrap).
 2. [Tampermonkey](https://www.tampermonkey.net/).
 
 ## Install

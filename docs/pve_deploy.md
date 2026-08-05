@@ -1,6 +1,6 @@
 # Seqta Link — Proxmox VE 部署指南
 
-在 **Proxmox VE** 的 **Debian LXC** 上部署 **Seqta Link v3.1.1**（Flask + SQLite，单进程）。
+在 **Proxmox VE** 的 **Debian LXC** 上部署 **Seqta Link v3.1.2**（Flask + SQLite，单进程）。
 
 **相关文档：** [docs/api-v2.md](api-v2.md) · [script/README.md](../script/README.md) · [.env.example](../.env.example)
 
@@ -175,4 +175,4 @@ v3 是全新栈，无自动迁移工具。建议：
 
 ---
 
-_文档版本：Seqta Link 3.1.1 · Flask + SQLite · gunicorn · root 下部署_
+_文档版本：Seqta Link 3.1.2 · Flask + SQLite · gunicorn · root 下部署_
