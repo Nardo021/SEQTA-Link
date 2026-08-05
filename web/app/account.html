@@ -71,9 +71,7 @@
           }
         });
       }
-      main().catch((err) => {
-        document.getElementById('content').innerHTML = `<p class="error">${err.message}</p>`;
-      });
+      main().catch((err) => showPageError('content', err));
     </script>
   </body>
 </html>

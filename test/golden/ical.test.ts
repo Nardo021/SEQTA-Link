@@ -41,8 +41,8 @@ describe('ical golden output', () => {
           created: '20260804T003502Z',
           lastModified: '20260804T003502Z',
           sequence: 0,
-          dtStart: '20260804T233500Z',
-          dtEnd: '20260805T003000Z',
+          dtStart: '20260805T093500',
+          dtEnd: '20260805T103000',
           summary: 'Music 1',
           location: 'M202',
           description: 'Teacher: Mr Example\\nPeriod: Period 2\\nClass: 11MUS',
@@ -54,18 +54,22 @@ describe('ical golden output', () => {
           created: '20260804T003502Z',
           lastModified: '20260804T003502Z',
           sequence: 2,
-          dtStart: '20261004T230000Z',
-          dtEnd: '20261005T010000Z',
+          dtStart: '20261005T100000',
+          dtEnd: '20261005T120000',
           summary: '中文课程, 分号;测试',
           location: null,
           description: 'Teacher: 王老师\\nPeriod: Period 3',
           status: 'CANCELLED',
         },
       ],
-      { dtStamp: '2026-08-04T00:35:02.000Z' },
+      { dtStamp: '2026-08-04T00:35:02.000Z', timezone: 'Australia/Sydney' },
     );
 
     assert.match(body, /BEGIN:VCALENDAR/);
+    assert.match(body, /BEGIN:VTIMEZONE/);
+    assert.match(body, /TZID:Australia\/Sydney/);
+    assert.match(body, /DTSTART;TZID=Australia\/Sydney:20260805T093500/);
+    assert.match(body, /DTEND;TZID=Australia\/Sydney:20260805T103000/);
     assert.match(body, /SUMMARY:Music 1/);
     assert.match(body, /STATUS:CANCELLED/);
     assert.match(body, /中文课程\\, 分号\\;测试/);

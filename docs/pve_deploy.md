@@ -1,6 +1,6 @@
 # Seqta Link — Proxmox VE 部署指南
 
-在 **Proxmox VE** 的 **Debian LXC** 上部署 **Seqta Link v2.1.0**（内嵌 PostgreSQL，一条命令启动）。
+在 **Proxmox VE** 的 **Debian LXC** 上部署 **Seqta Link v2.1.1**（内嵌 PostgreSQL，一条命令启动）。
 
 **相关文档：** [docs/api.md](api.md) · [script/README.md](../script/README.md) · [.env.example](../.env.example)
 
@@ -169,4 +169,4 @@ runuser -u seqta -- npm run cli -- backup --output /var/backups/seqta-calendar
 
 ---
 
-_文档版本：Seqta Link 2.1.0 · 内嵌 / 外部 PostgreSQL · root 下部署（无 sudo）· 本地认证与防爆破_
+_文档版本：Seqta Link 2.1.1 · 内嵌 / 外部 PostgreSQL · root 下部署（无 sudo）· 本地认证与防爆破_

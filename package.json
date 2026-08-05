@@ -1,6 +1,6 @@
 {
   "name": "seqta-link",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Seqta Link — self-hosted SEQTA timetable sync with iCalendar feed",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",

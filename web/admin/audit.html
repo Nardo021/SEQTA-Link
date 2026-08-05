@@ -65,7 +65,7 @@
         document.getElementById('reload').addEventListener('click', loadLogs);
         await loadLogs();
       }
-      main().catch((e) => { document.getElementById('content').textContent = e.message; });
+      main().catch((e) => showPageError('content', e));
     </script>
   </body>
 </html>

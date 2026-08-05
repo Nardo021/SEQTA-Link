@@ -102,6 +102,37 @@ export function formatIcalUtc(dateIso: string): string {
   return `${year}${month}${day}T${hour}${minute}${second}Z`;
 }
 
+/** Format a UTC instant as a floating local wall-clock iCal datetime (no Z) in the given zone. */
+export function formatIcalLocal(dateIso: string, timeZone: string): string {
+  const date = new Date(dateIso);
+  if (Number.isNaN(date.getTime())) {
+    throw new AppError('INVALID_LESSON', 'Invalid datetime for iCal formatting.', 400);
+  }
+
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  const parts = dtf.formatToParts(date);
+  const values: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') {
+      values[part.type] = part.value;
+    }
+  }
+
+  // Some engines emit "24" for midnight; normalize to 00.
+  const hour = values.hour === '24' ? '00' : values.hour;
+  return `${values.year}${values.month}${values.day}T${hour}${values.minute}${values.second}`;
+}
+
 export function formatHttpDate(dateIso: string): string {
   return new Date(dateIso).toUTCString();
 }

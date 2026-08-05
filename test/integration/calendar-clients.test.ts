@@ -55,10 +55,13 @@ describe('Phase 6 calendar client compatibility', () => {
     assert.match(body, /METHOD:PUBLISH/);
     assert.match(body, /X-WR-CALNAME:Leo Timetable/);
     assert.match(body, /X-WR-TIMEZONE:Australia\/Sydney/);
+    assert.match(body, /BEGIN:VTIMEZONE/);
+    assert.match(body, /TZID:Australia\/Sydney/);
     assert.match(body, /BEGIN:VEVENT/);
     assert.match(body, /UID:[^\r\n]+@timetable\.leoze\.top/);
-    assert.match(body, /DTSTART:/);
-    assert.match(body, /DTEND:/);
+    assert.match(body, /DTSTART;TZID=Australia\/Sydney:20260805T093500/);
+    assert.match(body, /DTEND;TZID=Australia\/Sydney:20260805T103000/);
+    assert.doesNotMatch(body, /DTSTART:\d{8}T\d{6}Z/);
     assert.match(body, /DTSTAMP:/);
     assert.match(body, /LAST-MODIFIED:/);
     assert.match(body, /SEQUENCE:\d+/);

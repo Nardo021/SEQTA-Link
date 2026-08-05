@@ -2,11 +2,11 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-**v2.1.0 — Self-hosted SEQTA timetable sync → Apple / Google Calendar (ICS)**
+**v2.1.1 — Self-hosted SEQTA timetable sync → Apple / Google Calendar (ICS)**
 
 Extract lessons from SEQTA Learn with a Tampermonkey userscript, sync them to a small Fastify backend, and subscribe once in Apple or Google Calendar. Every manual sync updates the same feed — no re-subscribe, no SEQTA credentials on the server.
 
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-2.1.1-blue.svg)](package.json)
 [![License: AGPL-3.0 + NC](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20NC-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D24-brightgreen.svg)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6.svg)](package.json)
@@ -37,7 +37,7 @@ flowchart LR
   ICS --> Cal
 ```
 
-npm package: `seqta-link@2.1.0`
+npm package: `seqta-link@2.1.1`
 
 ---
 

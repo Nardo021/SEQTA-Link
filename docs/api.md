@@ -1,6 +1,6 @@
 # Seqta Link — HTTP API
 
-**Product:** Seqta Link **v2.1.0**  
+**Product:** Seqta Link **v2.1.1**  
 Base URL example: `https://timetable.leoze.top`
 
 ## Tokens
@@ -174,4 +174,4 @@ Common codes: `UNAUTHORIZED`, `FORBIDDEN`, `INVALID_TOKEN`, `INVALID_REQUEST`, `
 
 ---
 
-_Document version: Seqta Link 2.1.0_
+_Document version: Seqta Link 2.1.1_

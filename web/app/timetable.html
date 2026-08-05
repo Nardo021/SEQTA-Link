@@ -61,7 +61,7 @@
         await load();
       }
       function showError(err) {
-        document.getElementById('content').innerHTML = `<p class="error">${err.message}</p>`;
+        showPageError('content', err);
       }
       main().catch(showError);
     </script>

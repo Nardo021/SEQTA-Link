@@ -2,11 +2,11 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-**v2.1.0 — 自托管 SEQTA 课表同步 → Apple / Google 日历（ICS）**
+**v2.1.1 — 自托管 SEQTA 课表同步 → Apple / Google 日历（ICS）**
 
 用 Tampermonkey 脚本从 SEQTA Learn 提取课表，同步到轻量 Fastify 后端，在 Apple 或 Google 日历中订阅一次即可。之后每次手动同步都会更新同一 Feed——无需重新订阅，服务端也不接触 SEQTA 账号密码。
 
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-2.1.1-blue.svg)](package.json)
 [![License: AGPL-3.0 + NC](https://img.shields.io/badge/license-AGPL--3.0%20%2B%20NC-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D24-brightgreen.svg)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6.svg)](package.json)
@@ -37,7 +37,7 @@ flowchart LR
   ICS --> Cal
 ```
 
-npm 包名：`seqta-link@2.1.0`
+npm 包名：`seqta-link@2.1.1`
 
 ---
 

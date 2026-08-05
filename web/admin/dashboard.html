@@ -47,7 +47,7 @@
               : '<p class="muted">No audit events yet.</p>'}
           </div>`;
       }
-      main().catch((e) => { document.getElementById('content').textContent = e.message; });
+      main().catch((e) => showPageError('content', e));
     </script>
   </body>
 </html>

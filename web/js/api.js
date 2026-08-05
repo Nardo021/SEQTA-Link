@@ -1,3 +1,11 @@
+function apiError(message, status, body) {
+  const error = new Error(message);
+  error.name = 'ApiError';
+  error.status = status;
+  error.body = body;
+  return error;
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     credentials: 'include',
@@ -16,7 +24,7 @@ async function api(path, options = {}) {
   }
   if (!response.ok) {
     const message = body?.error?.message || text || `Request failed (${response.status})`;
-    throw new Error(message);
+    throw apiError(message, response.status, body);
   }
   return body;
 }
@@ -55,22 +63,43 @@ function renderAdminNav(active) {
     .join('')}<a href="/app/dashboard.html" style="margin-left:auto">User Portal</a></nav>`;
 }
 
+function showPageError(targetId, error) {
+  const el = document.getElementById(targetId);
+  if (!el) throw error;
+  el.replaceChildren();
+  const p = document.createElement('p');
+  p.className = 'error';
+  const status = error?.status ? ` (${error.status})` : '';
+  p.textContent = `${error?.message || 'Request failed.'}${status}`;
+  el.appendChild(p);
+}
+
 async function requireAuth() {
   try {
     return await api('/api/me');
-  } catch {
-    window.location.href = '/app/login.html';
-    return null;
+  } catch (error) {
+    if (error.status === 401) {
+      window.location.href = '/app/login.html';
+      return null;
+    }
+    throw error;
   }
 }
 
 async function requireAdmin() {
   try {
-    await api('/api/admin/dashboard');
-    return true;
-  } catch {
-    window.location.href = '/admin/login.html';
-    return false;
+    const me = await api('/api/me');
+    const role = me?.user?.role;
+    if (role !== 'owner' && role !== 'admin') {
+      throw apiError('This account is not an administrator.', 403, me);
+    }
+    return me;
+  } catch (error) {
+    if (error.status === 401) {
+      window.location.href = '/admin/login.html';
+      return null;
+    }
+    throw error;
   }
 }
 

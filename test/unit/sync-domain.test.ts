@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { localDateTimeToUtcIso } from '../../src/shared/dates.js';
+import { formatIcalLocal, localDateTimeToUtcIso } from '../../src/shared/dates.js';
 import { computeNaturalKey, computeContentHash } from '../../src/modules/sync/identity.js';
 import { deduplicateLessons } from '../../src/modules/sync/deduplicator.js';
 import { normalizeLesson } from '../../src/modules/sync/normalizer.js';
@@ -67,5 +67,16 @@ describe('timezone conversion', () => {
   it('handles DST boundary in October', () => {
     const utc = localDateTimeToUtcIso('2026-10-05', '09:35:00', 'Australia/Sydney');
     assert.equal(utc, '2026-10-04T22:35:00Z');
+  });
+
+  it('formats ICS event times as Sydney wall-clock (not UTC Z)', () => {
+    assert.equal(
+      formatIcalLocal('2026-08-04T23:35:00Z', 'Australia/Sydney'),
+      '20260805T093500',
+    );
+    assert.equal(
+      formatIcalLocal('2026-10-04T22:35:00Z', 'Australia/Sydney'),
+      '20261005T093500',
+    );
   });
 });

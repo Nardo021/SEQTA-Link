@@ -49,9 +49,7 @@
             `Subscription URL (copy now):\n${result.calendarUrl}\n\nPrevious links stop working immediately.`;
         });
       }
-      main().catch((err) => {
-        document.getElementById('content').innerHTML = `<p class="error">${err.message}</p>`;
-      });
+      main().catch((err) => showPageError('content', err));
     </script>
   </body>
 </html>
