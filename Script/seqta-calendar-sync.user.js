@@ -13,6 +13,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @connect      timetable.yanze.me
 // @connect      timetable.leoze.top
 // @connect      localhost
 // @connect      127.0.0.1
@@ -35,12 +36,14 @@
   };
 
   const DEFAULTS = {
-    backendUrl: 'https://timetable.leoze.top',
+    backendUrl: 'https://timetable.yanze.me',
     weeksAhead: 12,
     timezone: 'Australia/Sydney',
     maxWeeks: 17,
     maxLessons: 2000,
   };
+
+  const LEGACY_BACKEND_URL = 'https://timetable.leoze.top';
 
   const SKIP_LESSON_TYPES = new Set(['note', 'holiday', 'assembly-note']);
 
@@ -54,10 +57,21 @@
     GM_setValue(key, value);
   }
 
+  function resolveBackendUrl() {
+    const configured = String(getSetting(STORAGE.backendUrl) || DEFAULTS.backendUrl).replace(/\/+$/, '');
+    // The historical default is no longer the canonical production endpoint.
+    // Migrate only that exact value; never overwrite a custom server URL.
+    if (configured === LEGACY_BACKEND_URL) {
+      setSetting(STORAGE.backendUrl, DEFAULTS.backendUrl);
+      return DEFAULTS.backendUrl;
+    }
+    return configured;
+  }
+
   function loadConfig() {
     const activeProfile = getActiveProfile();
     return {
-      backendUrl: String(getSetting(STORAGE.backendUrl) || DEFAULTS.backendUrl).replace(/\/+$/, ''),
+      backendUrl: resolveBackendUrl(),
       uploadToken: String(activeProfile?.uploadToken || getSetting(STORAGE.uploadToken) || '').trim(),
       deviceToken: String(activeProfile?.deviceToken || '').trim(),
       deviceId: String(activeProfile?.deviceId || '').trim(),
