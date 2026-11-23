@@ -4,6 +4,6 @@
   "private": true,
   "description": "Build tooling for Seqta Link Tampermonkey userscript",
   "scripts": {
-    "build:userscript": "node script/build.mjs"
+    "build:userscript": "node Script/build.mjs"
   }
 }
