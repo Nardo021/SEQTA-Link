@@ -5,7 +5,7 @@ import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
 export default defineConfig({
   worker: {
     name: "seqta-link-compatibility-spike",
-    compatibilityDate: "2026-11-25",
+    compatibilityDate: "2026-11-24",
     entrypoint,
     env: {
       DATABASE: bindings.d1({ name: "seqta-link-spike-local-only" }),
