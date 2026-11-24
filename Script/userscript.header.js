@@ -13,6 +13,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @connect      timetable.yanze.me
 // @connect      timetable.leoze.top
 // @connect      localhost
 // @connect      127.0.0.1
