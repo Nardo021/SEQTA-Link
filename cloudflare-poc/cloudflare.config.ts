@@ -10,6 +10,7 @@ export default defineConfig({
       DATABASE: bindings.d1({ name: "seqta-link-spike-local-only" }),
       TOKEN_PEPPER: bindings.secret(),
       UID_SECRET: bindings.secret(),
+      SESSION_SECRET: bindings.secret(),
     },
   },
 });

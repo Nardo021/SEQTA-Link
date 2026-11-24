@@ -3,12 +3,14 @@ import { beforeAll, expect, test } from "vitest";
 import { env } from "cloudflare:workers";
 import { hashToken, stableUid } from "../src/compat";
 import { handleRequest } from "../src/index";
+import { SCRYPT_LEGACY, PASSWORD } from "./password-fixtures";
+import { sessionHash } from "../src/auth";
 import schema from "../migrations/0001_schema.sql?raw";
 
 const pepper=new Uint8Array(32).fill(120),uidSecret=new Uint8Array(32).fill(121);
 const rawCalendar="sl_cal_fixture_please_do_not_use_as_secret",rawDevice="sl_dvc_fixture";
 const stamp="2026-11-24T00:00:00Z",db=env.DATABASE;
-const appEnv={DATABASE:db,TOKEN_PEPPER:btoa(String.fromCharCode(...pepper)),UID_SECRET:btoa(String.fromCharCode(...uidSecret))};
+const appEnv={DATABASE:db,TOKEN_PEPPER:btoa(String.fromCharCode(...pepper)),UID_SECRET:btoa(String.fromCharCode(...uidSecret)),SESSION_SECRET:btoa(String.fromCharCode(...uidSecret))};
 const baseUrl="https://example.invalid";
 const call=(path:string,init?:RequestInit)=>handleRequest(new Request(baseUrl+path,init),appEnv);
 const feedPath="/calendar/"+rawCalendar+".ics";
@@ -76,3 +78,39 @@ test("integrated D1 sync, stable UID, replay, partial/empty protection, ICS and 
   await db.prepare("UPDATE devices SET status='revoked' WHERE id=?").bind("d1").run();
   expect((await send(key(7),original)).status).toBe(401);
 });
+
+test("portal login, invitation, pairing, access control and logout",async()=>{
+ await db.prepare("UPDATE users SET email=?,password_hash=? WHERE id=?").bind("owner@example.invalid",SCRYPT_LEGACY,"u1").run();
+ const postForm=(path:string,values:Record<string,string>,cookie="")=>call(path,{method:"POST",headers:{Origin:baseUrl,"Content-Type":"application/x-www-form-urlencoded",Cookie:cookie},body:new URLSearchParams(values).toString()});
+ expect((await call("/app/dashboard")).status).toBe(303);
+ const login=await postForm("/app/login",{email:"owner@example.invalid",password:PASSWORD});expect(login.status).toBe(303);
+ const ownerCookie=login.headers.get("Set-Cookie")!.split(";")[0];expect(ownerCookie).toMatch(/^seqta_session=/);
+ expect((await call("/app/dashboard",{headers:{Cookie:ownerCookie}})).status).toBe(200);
+ expect((await call("/admin/dashboard",{headers:{Cookie:ownerCookie}})).status).toBe(200);
+ expect((await call("/api/v2/me/pairing-codes",{method:"POST",headers:{Cookie:ownerCookie}})).status).toBe(403);
+ const codeResponse=await call("/api/v2/me/pairing-codes",{method:"POST",headers:{Cookie:ownerCookie,Origin:baseUrl}});expect(codeResponse.status).toBe(200);
+ const {code}=await codeResponse.json() as {code:string};
+ const pair=()=>call("/api/v2/device/pair",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,deviceName:"New fixture"})});
+ const paired=await pair();expect(paired.status).toBe(200);
+ const {deviceToken}=await paired.json() as {deviceToken:string};expect(deviceToken).toMatch(/^sl_dvc_/);
+ expect((await pair()).status).toBe(404);
+ expect((await call("/api/v2/status",{headers:{Authorization:"Bearer "+deviceToken}})).status).toBe(200);
+ const regularRaw="a".repeat(43),regularCookie="seqta_session="+regularRaw;
+ await db.batch([
+  db.prepare("INSERT INTO users(id,display_name,role,created_at,updated_at) VALUES (?,?,?,?,?)").bind("u2","Regular","user",stamp,stamp),
+  db.prepare("INSERT INTO calendars(id,owner_user_id,name,created_at,updated_at) VALUES (?,?,?,?,?)").bind("c2","u2","Regular timetable",stamp,stamp),
+  db.prepare("INSERT INTO sessions(id,user_id,session_token_hash,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?)").bind("s2","u2",await sessionHash(uidSecret,regularRaw),"2099-01-01T00:00:00Z",stamp,stamp)
+ ]);
+ expect((await call("/admin/users",{headers:{Cookie:regularCookie}})).status).toBe(403);
+ const d=await db.prepare("SELECT id FROM devices WHERE token_hash=?").bind(await hashToken(pepper,"device",deviceToken)).first<{id:string}>();
+ expect((await call("/api/v2/me/devices/"+d!.id,{method:"DELETE",headers:{Cookie:regularCookie,Origin:baseUrl}})).status).toBe(404);
+ const invite=await postForm("/admin/invitations",{expected_name:"Invited fixture",max_devices:"2"},ownerCookie);expect(invite.status).toBe(200);
+ const inviteUrl=(await invite.text()).match(/\/invite\?token=[A-Za-z0-9_-]{43}/)?.[0];expect(inviteUrl).toBeTruthy();
+ expect((await call(inviteUrl!)).status).toBe(200);
+ const registered=await postForm(inviteUrl!,{email:"invite@example.invalid",display_name:"Invited fixture",password:PASSWORD});expect(registered.status).toBe(303);
+ expect((await call(inviteUrl!)).status).toBe(404);
+ const newCookie=registered.headers.get("Set-Cookie")!.split(";")[0];
+ expect((await call("/app/dashboard",{headers:{Cookie:newCookie}})).status).toBe(200);
+ expect((await postForm("/auth/logout",{},ownerCookie)).status).toBe(303);
+ expect((await call("/app/dashboard",{headers:{Cookie:ownerCookie}})).status).toBe(303);
+},30_000);

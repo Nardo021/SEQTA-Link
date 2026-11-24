@@ -1,7 +1,9 @@
 import { ApiError, decodeSecret, readJson } from "./common";
 import { calendarFeed } from "./ics";
 import { deviceStatus, syncCalendar } from "./sync";
-type AppEnv={DATABASE:D1Database;TOKEN_PEPPER?:string;UID_SECRET?:string};
+import { portal } from "./portal";
+import { pairDevice } from "./auth";
+type AppEnv={DATABASE:D1Database;TOKEN_PEPPER?:string;UID_SECRET?:string;SESSION_SECRET?:string};
 function json(data:unknown,status=200){return Response.json(data,{status,headers:{"Cache-Control":"no-store"}});}
 export async function handleRequest(request:Request,env:AppEnv):Promise<Response>{
   const path=new URL(request.url).pathname;
@@ -18,6 +20,9 @@ export async function handleRequest(request:Request,env:AppEnv):Promise<Response
       const uid=decodeSecret(env.UID_SECRET);if(!uid)return json({error:{code:"UNAVAILABLE",message:"Sync unavailable."}},503);
       return json(await syncCalendar(env.DATABASE,pepper,uid,request,await readJson(request)));
     }
+    if(request.method==="POST"&&path==="/api/v2/device/pair")return json(await pairDevice(env.DATABASE,pepper,request,await readJson(request)));
+    const secret=decodeSecret(env.SESSION_SECRET);
+    if(secret)return await portal(request,env.DATABASE,pepper,secret);
     return new Response(null,{status:404});
   }catch(e){if(e instanceof ApiError)return json({error:{code:e.code,message:e.message,details:{}}},e.status);return json({error:{code:"INTERNAL_ERROR",message:"Request failed.",details:{}}},500);}
 }

@@ -86,3 +86,5 @@ CREATE TABLE worker_sync_versions (
 CREATE TABLE worker_sync_guard (
  id TEXT PRIMARY KEY NOT NULL, ok INTEGER NOT NULL CHECK(ok=1)
 );
+
+CREATE TABLE worker_rate_limits (key TEXT PRIMARY KEY NOT NULL, attempts INTEGER NOT NULL, expires_at TEXT NOT NULL);

@@ -2,7 +2,7 @@ import { argon2id, argon2i, argon2d } from "@noble/hashes/argon2.js";
 import { scrypt } from "@noble/hashes/scrypt.js";
 
 const encoder = new TextEncoder();
-type Purpose = "calendar" | "device";
+type Purpose = "calendar" | "device" | "invite" | "rate";
 
 async function hmacSha256(keyBytes: Uint8Array, message: string): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey(
@@ -80,4 +80,11 @@ export function verifyLegacyScrypt(password: string, stored: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function createPasswordHash(password:string):string {
+ const salt=crypto.getRandomValues(new Uint8Array(16));
+ const derived=argon2id(password,salt,{m:65536,t:3,p:4,dkLen:32,version:0x13,maxmem:128*1024*1024});
+ const encode=(x:Uint8Array)=>btoa(String.fromCharCode(...x)).replace(/=+$/g,"");
+ try{return "$argon2id$v=19$m=65536,t=3,p=4$"+encode(salt)+"$"+encode(derived);}finally{derived.fill(0);}
 }
