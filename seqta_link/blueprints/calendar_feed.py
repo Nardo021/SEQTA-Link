@@ -32,7 +32,7 @@ def calendar_feed(token: str):
     ).all()
     body = serialize_events(events, calendar.name, calendar.timezone, now_iso())
     last_mod = calendar.last_changed_at or calendar.updated_at
-    resp = Response(body, mimetype="text/calendar; charset=utf-8")
+    resp = Response(body, content_type="text/calendar; charset=utf-8")
     resp.headers["Cache-Control"] = "private, no-cache, max-age=0, must-revalidate"
     resp.headers["ETag"] = etag
     if last_mod:
