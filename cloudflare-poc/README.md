@@ -4,7 +4,7 @@
 
 This spike tests the minimum dangerous compatibility boundaries before a Cloudflare rewrite:
 - Crypto `HMAC-SHA256` token hash bytes and event `UID` match Flask/Python.
-- WebAssembly `hash-wasm` Argon2 PHC verifier accepts an independent Python `argon2-cffi` fixture (small 1 MiB memory).
+- pure JavaScript `@noble/hashes` Argon2 PHC verifier accepts an independent Python `argon2-cffi` fixture (small 1 MiB memory).
 - A **local** D1 database can resolve active, disabled, and revoked hashed calendar subscriptions with revision ETags.
 - The Worker itself is **fail-closed**: every URL returns 404, including `/calendar`. There is **no** live ICS, login, sync, or admin route.
 
@@ -33,3 +33,7 @@ Tests run using Cloudflare's Vitest Workerd integration with an isolated **local
 6. Create a separate staging Worker and D1 only after explicit technical acceptance; preserve CT120 and production routing.
 
 See [migration gates](../docs/cloudflare-migration-gates.md) in Draft PR #2. This independent PR deliberately does not depend on the production userscript fix.
+
+## Gate 1 finding: Wasm runtime compilation unavailable
+
+The initial PoC ran `hash-wasm` and failed in actual Workerd with `CompileError: WebAssembly.compile(): Wasm code generation disallowed by embedder`. That library bundles base64 Wasm and compiles it dynamically at runtime. Cloudflare Workers require precompiled Wasm imports; replacing this library with plain JavaScript `@noble/hashes` is an experiment, not approval for production password verification. Keep this failure in the migration decision record. 
