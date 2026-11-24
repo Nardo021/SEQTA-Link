@@ -30,6 +30,8 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Workerd + local D1 + Argon2 compatibility tests
         run: npm test
+      - name: Synthetic SQLite migration rehearsal
+        run: python3 scripts/test_export.py
       - name: Build without deploy and generate binding types
         run: npm run build
       - name: Typecheck Worker code against generated binding types
