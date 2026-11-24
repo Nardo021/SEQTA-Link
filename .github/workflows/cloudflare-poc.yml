@@ -36,3 +36,19 @@ jobs:
         run: npm run build
       - name: Typecheck Worker code against generated binding types
         run: npm run typecheck
+      - name: Package isolated staging Worker
+        run: |
+          mkdir -p staging-build
+          node --input-type=module -e 'import {build} from "esbuild"; await build({entryPoints:["src/index.ts"],bundle:true,format:"esm",platform:"browser",target:"es2022",minify:true,outfile:"staging-build/worker.mjs",legalComments:"eof"});'
+          cp package-lock.json staging-build/
+          sha256sum staging-build/worker.mjs staging-build/package-lock.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: seqta-staging-build
+          path: cloudflare-poc/staging-build/
+          retention-days: 3
+      # Temporary bridge for the connected API: only source bundle and dependency lock.
+      # No environment variables, credentials, database snapshots or user records.
+      - name: Export build and lockfile bytes for staging handoff
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; for(const name of ["worker.mjs","package-lock.json"]){const b=fs.readFileSync("staging-build/"+name).toString("base64"); console.log("SEQTA_EXPORT_BEGIN "+name+" "+b.length); for(let i=0;i<b.length;i+=2000)console.log("SEQTA_EXPORT_CHUNK "+name+" "+b.slice(i,i+2000)); console.log("SEQTA_EXPORT_END "+name);}'
