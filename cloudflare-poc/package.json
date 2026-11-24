@@ -1,0 +1,22 @@
+{
+  "name": "seqta-link-workers-compat-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hash-wasm": "^4.11.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "beta",
+    "@cloudflare/vitest-plugin": "latest",
+    "@cloudflare/workers-types": "latest",
+    "cf": "latest",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.0",
+    "vitest": "^4.1.0"
+  }
+}

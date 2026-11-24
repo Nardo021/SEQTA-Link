@@ -1,0 +1,32 @@
+name: Cloudflare Auth+D1 PoC
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cloudflare-poc/**'
+      - '.github/workflows/cloudflare-poc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker-compat:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare-poc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install PoC dependencies (no Cloudflare credentials)
+        run: npm install --no-audit --no-fund
+      - name: Workerd + local D1 + Argon2 compatibility tests
+        run: npm test
+      - name: Typecheck Worker code
+        run: npm run typecheck
+      - name: Build without deploy
+        run: npm run build
