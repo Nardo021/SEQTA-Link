@@ -30,7 +30,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Workerd + local D1 + Argon2 compatibility tests
         run: npm test
-      - name: Typecheck Worker code
-        run: npm run typecheck
-      - name: Build without deploy
+      - name: Build without deploy and generate binding types
         run: npm run build
+      - name: Typecheck Worker code against generated binding types
+        run: npm run typecheck
