@@ -30,17 +30,9 @@ test("WASM Argon2 verifies an independently generated Python argon2-cffi PHC has
 });
 
 beforeAll(async () => {
-  await env.DATABASE.exec(`
-    CREATE TABLE users (
-      id TEXT PRIMARY KEY, account_status TEXT NOT NULL, feed_enabled INTEGER NOT NULL
-    );
-    CREATE TABLE calendars (
-      id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, revision INTEGER NOT NULL
-    );
-    CREATE TABLE calendar_tokens (
-      token_hash TEXT PRIMARY KEY, calendar_id TEXT NOT NULL, status TEXT NOT NULL
-    );
-  `);
+  await env.DATABASE.prepare("CREATE TABLE users (id TEXT PRIMARY KEY, account_status TEXT NOT NULL, feed_enabled INTEGER NOT NULL)").run();
+  await env.DATABASE.prepare("CREATE TABLE calendars (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, revision INTEGER NOT NULL)").run();
+  await env.DATABASE.prepare("CREATE TABLE calendar_tokens (token_hash TEXT PRIMARY KEY, calendar_id TEXT NOT NULL, status TEXT NOT NULL)").run();
   await env.DATABASE.prepare(
     "INSERT INTO users (id, account_status, feed_enabled) VALUES (?, ?, ?)"
   ).bind("u1", "active", 1).run();
