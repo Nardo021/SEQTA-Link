@@ -59,3 +59,9 @@ Prior evidence: [CI #45496519508](https://github.com/Nardo021/SEQTA-Link/actions
 3. **Cut over:** freeze writes for a final consistent import (or proven equivalent), smoke-test current hostname and existing subscriptions, switch only the intended route; retain the old service and restorable backup. If new writes occur after cutover, reconcile them before rollback; do not silently lose them. Retire CT120 only after successful real-client verification, a retained rollback backup, and explicit owner authorization.
 
 If Worker login exceeds its actual resource budget, do not downgrade KDFs: resolve the auth architecture or use the automated PVE fallback. No production change is authorized by this document.
+
+## Implementation status (2026-11-25)
+
+The isolated branch now contains a migration schema mirroring all existing Flask tables plus two additive Worker sync guard tables, and real `/health/live`, `/health/ready`, `/api/v2/status`, `/api/v2/sync`, and `/calendar/<token>.ics` handlers. Token and UID secrets must be provided as original base64 values; no defaults or real values are bundled. Imports must preserve existing IDs, hashes, timestamps, UIDs, status and sequence. The D1 sync engine reads a snapshot, applies an atomic batch guarded by calendar generation, authorization and source identity, and preserves cancellation/restore/idempotency semantics. No production writes or remote resources.
+
+Remaining implementation (same compressed stage 1): session/login/portal/admin and pairing routes, exact migration export/import tooling and complete behavior review; do not deploy until completed. Actual Workers authentication CPU/memory, final data migration and real client smoke remain staging acceptance. The local CI uses synthetic data only. The schema is a source-derived migration definition, not evidence that the production database has already been imported.
