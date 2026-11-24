@@ -1,4 +1,5 @@
 import { beforeAll, expect, test } from "vitest";
+import { argon2Verify } from "hash-wasm";
 import { env } from "cloudflare:workers";
 import { hashToken, stableUid, verifyArgon2Phc } from "../src/compat";
 import { resolveCalendarToken } from "../src/lookup";
@@ -23,6 +24,8 @@ test("UID generation matches the current Flask format", async () => {
 test("WASM Argon2 verifies an independently generated Python argon2-cffi PHC hash", async () => {
   // Python argon2-cffi Type.ID, m=1024 KiB, t=2, p=1, salt="fixed-salt-12345"
   const hash = "$argon2id$v=19$m=1024,t=2,p=1$Zml4ZWQtc2FsdC0xMjM0NQ$yFodBUXp5pQtNAKVrFlxRqmiL23Qo02yBhPRo3I7p0Q";
+  // Direct library call deliberately exposes Workerd WebAssembly errors if any.
+  expect(await argon2Verify({ password: "fixture-secret", hash })).toBe(true);
   expect(await verifyArgon2Phc("fixture-secret", hash)).toBe(true);
   expect(await verifyArgon2Phc("wrong-secret", hash)).toBe(false);
   expect(await verifyArgon2Phc("fixture-secret", "$argon2id$bad")).toBe(false);
