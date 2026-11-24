@@ -25,7 +25,7 @@ export async function getDevice(db:D1Database,pepper:Uint8Array,request:Request)
 export async function deviceStatus(db:D1Database,pepper:Uint8Array,request:Request){
   const {device:d}=await getDevice(db,pepper,request);
   const [count,run]=await db.batch([db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id=? AND active=1 AND status='confirmed'").bind(d.calendar_id),db.prepare("SELECT status FROM sync_runs WHERE calendar_id=? ORDER BY started_at DESC LIMIT 1").bind(d.calendar_id)]);
-  return {feed:{name:d.feed_name,timezone:d.timezone,revision:d.revision},sync:{enabled:true,lastSyncedAt:d.last_synced_at,lastStatus:run.results[0]?.status||"unknown"},events:{active:count.results[0]?.n||0},device:{name:d.name,lastSeenAt:nowIso()}};
+  return {feed:{name:d.feed_name,timezone:d.timezone,revision:d.revision},sync:{enabled:true,lastSyncedAt:d.last_synced_at,lastStatus:(run.results[0] as {status:string}|undefined)?.status||"unknown"},events:{active:(count.results[0] as {n:number}|undefined)?.n||0},device:{name:d.name,lastSeenAt:nowIso()}};
 }
 async function normalize(body:Record<string,unknown>,d:Device){
   if(body.schemaVersion!==1||body.timezone!==d.timezone||d.timezone!=="Australia/Sydney")return fail("INVALID_TIMEZONE","Unsupported schema or timezone.");
@@ -69,7 +69,7 @@ export async function syncCalendar(db:D1Database,pepper:Uint8Array,uidSecret:Uin
     db.prepare("SELECT * FROM sync_runs WHERE device_id=? AND idempotency_key=?").bind(d.id,idem)
   ]);
   const st=state.results[0] as {revision:number;updated_at:string;generation:number}|undefined;if(!st)return fail("INVALID_TOKEN","Calendar unavailable.",401);
-  const ident=identity.results[0];if(ident&&(ident.school_host!==n.school||ident.student_ref!==n.student))return fail("SOURCE_IDENTITY_MISMATCH","Device is paired with a different SEQTA student.",409);
+  const ident=identity.results[0] as {school_host:string;student_ref:string}|undefined;if(ident&&(ident.school_host!==n.school||ident.student_ref!==n.student))return fail("SOURCE_IDENTITY_MISMATCH","Device is paired with a different SEQTA student.",409);
   const replay=oldRun.results[0] as Run|undefined;
   if(replay){if(replay.payload_hash!==n.payloadHash||replay.snapshot_hash!==n.snapshotHash)return fail("IDEMPOTENCY_KEY_REUSED","Key used with different payload.",409);if(replay.status!=="success")return fail("SYNC_ALREADY_RUNNING","Previous sync is not successful.",409);
     const result={received:replay.received_count,normalized:replay.normalized_count,duplicatesRemoved:replay.duplicate_count,inserted:replay.inserted_count,updated:replay.updated_count,removed:replay.removed_count,restored:replay.restored_count,unchanged:replay.unchanged_count};
