@@ -30,6 +30,10 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Workerd + local D1 + Argon2 compatibility tests
         run: npm test
+      - name: Measure KDF host-side CPU and RSS (not deployed Worker)
+        run: |
+          node --experimental-strip-types scripts/benchmark-kdf.ts argon2
+          node --experimental-strip-types scripts/benchmark-kdf.ts scrypt
       - name: Build without deploy and generate binding types
         run: npm run build
       - name: Typecheck Worker code against generated binding types

@@ -37,3 +37,14 @@ See [migration gates](../docs/cloudflare-migration-gates.md) in Draft PR #2. Thi
 ## Gate 1 finding: Wasm runtime compilation unavailable
 
 The initial PoC ran `hash-wasm` and failed in actual Workerd with `CompileError: WebAssembly.compile(): Wasm code generation disallowed by embedder`. That library bundles base64 Wasm and compiles it dynamically at runtime. Cloudflare Workers require precompiled Wasm imports; replacing this library with plain JavaScript `@noble/hashes` is an experiment, not approval for production password verification. Keep this failure in the migration decision record. 
+
+## Gate 1B: production-cost profile and legacy password checks
+
+The tests add independently generated Python Argon2id m=65536 KiB, t=3, p=4 and the exact historical hashlib.scrypt n=16384,r=8,p=1,dklen=64 format. Actual stored production hash profiles remain unverified. Run host-side comparisons with:
+
+```sh
+node --experimental-strip-types scripts/benchmark-kdf.ts argon2
+node --experimental-strip-types scripts/benchmark-kdf.ts scrypt
+```
+
+The CI reports native Node CPU and process peak RSS as development proxies, not Worker isolate memory or Cloudflare billable CPU. Workerd tests establish functional compatibility only. Cloudflare's published limits include 128 MB isolate memory and a 10 ms CPU budget on Workers Free. [Limits](https://developers.cloudflare.com/workers/platform/limits/). Default-profile hashing uses 64 MiB of Argon2 algorithm memory before runtime overhead; do not downgrade hashing or assert Free plan compatibility based on these tests. A remote, isolated, rate-limited benchmark with no actual users/data is a separate acceptance gate. No password or hash is exposed through Worker routes.
