@@ -70,7 +70,7 @@ def test_ics_subscription_http_contract(app, client, owner):
     path = "/calendar/" + raw + ".ics"
     response = client.get(path)
     assert response.status_code == 200
-    assert response.headers["Content-Type"].startswith("text/calendar")
+    assert response.headers["Content-Type"] == "text/calendar; charset=utf-8"
     assert response.headers["ETag"] == '"calendar-7"'
     assert "private" in response.headers["Cache-Control"]
     body = response.get_data(as_text=True)
