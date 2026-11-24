@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "vitest";
 import { env } from "cloudflare:workers";
-import { hashToken, stableUid, verifyArgon2Phc } from "../src/compat";
+import { hashToken, stableUid } from "../src/compat";
 import { resolveCalendarToken } from "../src/lookup";
 import worker from "../src/index";
 
@@ -18,15 +18,6 @@ test("HMAC token hashes equal the Flask compatibility vectors", async () => {
 test("UID generation matches the current Flask format", async () => {
   expect(await stableUid(secret, "cal-fixed-01", "evt-fixed-01"))
     .toBe("TU3ivCe5WD3fTmf9vAprFaHSm5WszzJ_qOufOht6yPs@seqta.link");
-});
-
-test("Pure JS Argon2 verifies an independently generated Python argon2-cffi PHC hash", () => {
-  // Python argon2-cffi Type.ID, m=1024 KiB, t=2, p=1, salt="fixed-salt-12345"
-  const hash = "$argon2id$v=19$m=1024,t=2,p=1$Zml4ZWQtc2FsdC0xMjM0NQ$yFodBUXp5pQtNAKVrFlxRqmiL23Qo02yBhPRo3I7p0Q";
-  expect(verifyArgon2Phc("fixture-secret", hash)).toBe(true);
-  expect(verifyArgon2Phc("wrong-secret", hash)).toBe(false);
-  expect(verifyArgon2Phc("fixture-secret", "$argon2id$bad")).toBe(false);
-  expect(verifyArgon2Phc("fixture-secret", hash.replace("m=1024", "m=262144"))).toBe(false);
 });
 
 beforeAll(async () => {

@@ -24,6 +24,7 @@ test("legacy scrypt rejects wrong password and malformed format", () => {
 
 test("reject malformed and excessive Argon2 costs before KDF work", () => {
   for (const value of [
+    "$argon2id$bad",
     ARGON2_DEFAULT.replace("m=65536", "m=131072"),
     ARGON2_DEFAULT.replace("t=3", "t=1000"),
     ARGON2_DEFAULT.replace("p=4", "p=1000"),
