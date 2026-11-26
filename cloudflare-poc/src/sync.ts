@@ -95,6 +95,7 @@ export async function syncCalendar(db:D1Database,pepper:Uint8Array,uidSecret:Uin
   }
   const byId=new Map((events.results as StoredEvent[]).map(e=>[e.id,e])),byNatural=new Map([...byId.values()].map(e=>[e.natural_key,e])),byAlias=new Map((aliases.results as {source_key:string;event_id:string}[]).map(x=>[x.source_key,x.event_id]));
   const counts:Counts={received:n.received,normalized:n.lessons.length,duplicatesRemoved:n.duplicates,inserted:0,updated:0,removed:0,restored:0,unchanged:0};
+  const original=new Map(byId);
   const stamp=nowIso(),seen=new Set<string>(),writes:StoredEvent[]=[],aliasWrites:{source_key:string;event_id:string}[]=[];
   for(const l of n.lessons){
     let event=byId.get(byAlias.get(l.source_key)||"")||byNatural.get(l.natural_key);
@@ -125,6 +126,12 @@ export async function syncCalendar(db:D1Database,pepper:Uint8Array,uidSecret:Uin
     db.prepare("INSERT INTO sync_runs(id,owner_user_id,calendar_id,device_id,idempotency_key,payload_hash,snapshot_hash,range_from,range_until,received_count,normalized_count,duplicate_count,inserted_count,updated_count,removed_count,restored_count,unchanged_count,status,started_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'success',?,?)").bind(id,d.owner_user_id,cid,d.id,idem,n.payloadHash,n.snapshotHash,rangeFrom,rangeUntil,counts.received,counts.normalized,counts.duplicatesRemoved,counts.inserted,counts.updated,counts.removed,counts.restored,counts.unchanged,stamp,stamp),
     db.prepare("DELETE FROM worker_sync_guard WHERE id=?").bind(id)
   );
+  // Record the exact changed events in the same transaction as the sync run.
+  const snapshot=(e:StoredEvent)=>({title:e.title,course_code:e.course_code,local_date:e.local_date,period_key:e.period_key,starts_at_utc:e.starts_at_utc,ends_at_utc:e.ends_at_utc,teacher:e.teacher,room:e.room,description:e.description,event_type:e.event_type,status:e.status,active:e.active,sequence:e.sequence,ical_uid:e.ical_uid});
+  const changes=writes.map(e=>{const prior=original.get(e.id);return {event_id:e.id,kind:!prior?"inserted":!e.active?"removed":!prior.active?"restored":"updated",before_json:prior?JSON.stringify(snapshot(prior)):null,after_json:JSON.stringify(snapshot(e))};});
+  for(const data of chunks(changes))statements.push(db.prepare("INSERT INTO worker_event_changes(calendar_id,sync_id,event_id,kind,before_json,after_json,changed_at) SELECT ?,?,json_extract(value,'$.event_id'),json_extract(value,'$.kind'),json_extract(value,'$.before_json'),json_extract(value,'$.after_json'),? FROM json_each(?)").bind(cid,id,stamp,data));
+  // A rolling 90-day history; raw event history is not deleted.
+  statements.push(db.prepare("DELETE FROM worker_event_changes WHERE calendar_id=? AND changed_at<?").bind(cid,new Date(Date.now()-90*86400000).toISOString().replace(/Z$/,"")));
   try{await db.batch(statements);}catch(e){if(String(e).includes("CHECK constraint failed")||String(e).includes("UNIQUE constraint failed"))return fail("SYNC_ALREADY_RUNNING","Concurrent update or conflicting snapshot; retry.",409);throw e;}
   return {syncId:id,revision,changed,result:counts,lastSyncedAt:stamp};
 }

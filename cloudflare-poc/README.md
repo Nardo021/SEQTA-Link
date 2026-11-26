@@ -99,3 +99,7 @@ Userscript 3.2.0 is bundled from tracked sources and must be installed manually 
 ## Production ICS snapshot v2
 
 Subscription feeds contain only active confirmed events. Cancelled rows and aliases remain in the database for sync reconciliation and stable UID restoration; do not publish tombstones in a full snapshot subscription. The `calendar-v2-<revision>` ETag invalidates v1 representations without rewriting course rows or subscription credentials. Apple Calendar and other snapshot consumers refresh on their own schedule; cached cancelled events may need a manual refresh. No database migration required.
+
+## Workspace v3 and production reliability
+
+Apply 0004_workspace_reliability.sql before deploy. Authenticated own-calendar command search (including aliases), keyboard palette, collapsible desktop navigation, pinned calendar headers/time axis, zoom, course filters, two-week view and browser print/PDF; native accessible dialogs compose official shadcn primitives. Sync change details are recorded atomically with each successful run; rolling 90-day detail history, no destructive restore. Personal JSON export excludes credentials. ICS v3 uses stable DTSTAMP and skips returning event rows on matching ETags, retains active-only snapshots and telemetry. Health readiness checks schema and secret configuration; sanitized error IDs omit paths/tokens/exception content. Actual browser performance and provider refresh still require live verification. Full unattended deployment, passkeys, snapshot restore and scheduled external monitoring remain separate tasks.

@@ -9,8 +9,8 @@ function json(data:unknown,status=200){return Response.json(data,{status,headers
 export async function handleRequest(request:Request,env:AppEnv):Promise<Response>{
   const path=new URL(request.url).pathname;
   if(request.method==="GET"&&path==="/assets/ui.js")return new Response(clientScript,{headers:{"Content-Type":"text/javascript; charset=utf-8","Cache-Control":"public, max-age=300","X-Content-Type-Options":"nosniff","Cross-Origin-Resource-Policy":"same-origin"}});
-  if(request.method==="GET"&&path==="/health/live")return json({status:"ok"});
-  if(request.method==="GET"&&path==="/health/ready"){try{await env.DATABASE.prepare("SELECT 1 FROM calendars LIMIT 1").all();return json({status:"ok"});}catch{return json({status:"unavailable"},503);}}
+  if(request.method==="GET"&&(path==="/health/live"||path==="/health"))return json({status:"ok"});
+  if(request.method==="GET"&&path==="/health/ready"){try{await env.DATABASE.batch(["calendars","worker_event_changes","worker_calendar_preferences","calendar_subscription_clients"].map(t=>env.DATABASE.prepare("SELECT 1 FROM "+t+" LIMIT 1")));if(!decodeSecret(env.TOKEN_PEPPER)||!decodeSecret(env.UID_SECRET)||!decodeSecret(env.SESSION_SECRET))return json({status:"unavailable"},503);return json({status:"ok"});}catch{return json({status:"unavailable"},503);}}
   const pepper=decodeSecret(env.TOKEN_PEPPER);
   // No production secrets or default credentials are bundled.
   if(!pepper)return new Response(null,{status:404});
@@ -27,6 +27,6 @@ export async function handleRequest(request:Request,env:AppEnv):Promise<Response
     const secret=decodeSecret(env.SESSION_SECRET);
     if(secret)return await portal(request,env.DATABASE,pepper,secret);
     return new Response(null,{status:404});
-  }catch(e){if(e instanceof ApiError)return json({error:{code:e.code,message:e.message,details:{}}},e.status);return json({error:{code:"INTERNAL_ERROR",message:"Request failed.",details:{}}},500);}
+  }catch(e){if(e instanceof ApiError)return json({error:{code:e.code,message:e.message,details:{}}},e.status);const requestId=crypto.randomUUID();console.error(JSON.stringify({event:"request_failed",requestId,category:path.startsWith("/calendar/")?"feed":path.startsWith("/api/")?"api":path.startsWith("/admin/")?"admin":"portal",method:request.method}));return json({error:{code:"INTERNAL_ERROR",message:"Request failed.",details:{requestId}}},500);}
 }
 export default {fetch:handleRequest} satisfies ExportedHandler<AppEnv>;
