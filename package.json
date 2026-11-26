@@ -1,9 +1,10 @@
 {
   "name": "seqta-link-userscript",
-  "version": "3.1.2",
+  "version": "3.2.0",
   "private": true,
   "description": "Build tooling for Seqta Link Tampermonkey userscript",
   "scripts": {
-    "build:userscript": "node script/build.mjs"
+    "build:userscript": "node Script/build.mjs",
+    "test:userscript": "node --test Script/test/*.test.mjs"
   }
 }

@@ -1,6 +1,6 @@
 # Seqta Link (Tampermonkey)
 
-**Userscript v3.1.2** for [Seqta Link](../README.md) — extracts your SEQTA Learn timetable and uploads it to the backend.
+**Userscript v3.2.0** for [Seqta Link](../README.md) — extracts your SEQTA Learn timetable and uploads it to the backend.
 
 **Path:** Portal pairing code → Device Token (`sl_dvc_…`) → `POST /api/v2/sync` / `GET /api/v2/status`.
 
@@ -32,7 +32,7 @@ Multiple profiles can be stored locally; Sync asks you to confirm the current SE
 
 ## Prerequisites
 
-1. Running Seqta Link **v3.1.2+** with an account (invite or owner bootstrap).
+1. Running Seqta Link **v3.2.0+** with an account (invite or owner bootstrap).
 2. [Tampermonkey](https://www.tampermonkey.net/).
 
 ## Install
@@ -131,3 +131,7 @@ python run.py
 - [README.md](../README.md) — Seqta Link overview
 - [docs/api-v2.md](../docs/api-v2.md) — Device API, portal routes, errors
 - [docs/pve_deploy.md](../docs/pve_deploy.md) — production deploy
+
+## Smart Auto Sync
+
+Opt in under Calendar Settings for each paired profile, school host and backend. First complete one confirmed manual sync. Every 15 minutes, while SEQTA is visible and authenticated, the script checks source identity and timetable coverage; it skips unchanged successful snapshots and unsafe incomplete/empty automatic uploads. A genuine empty week is not deletion-authoritative unless all five weekdays have explicit holiday markers; visible DOM extraction is never complete. Requires browser Web Locks support. Closing the browser stops auto sync. The Worker records the latest authenticated check. Staging Access can prevent machine requests; production cutover is required for ordinary client use.

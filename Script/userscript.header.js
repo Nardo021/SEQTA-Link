@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seqta Link
 // @namespace    https://timetable.leoze.top
-// @version      3.1.2
+// @version      3.2.0
 // @description  Sync SEQTA Learn timetable to Seqta Link (Apple / Google Calendar feed)
 // @author       Leo
 // @match        https://learn.masada.onseqtacloud.com/*
@@ -13,6 +13,8 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @connect      timetable.yanze.me
+// @connect      seqta-link-staging.raspy-heart-8d21.workers.dev
 // @connect      timetable.leoze.top
 // @connect      localhost
 // @connect      127.0.0.1

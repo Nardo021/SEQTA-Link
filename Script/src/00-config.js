@@ -8,14 +8,17 @@
     studentRefOverride: 'seqtaCal.studentRefOverride',
     profiles: 'seqtaCal.profiles',
     activeProfileId: 'seqtaCal.activeProfileId',
+    autoPrefix: 'seqtaCal.auto.v1.',
   };
 
   const DEFAULTS = {
-    backendUrl: 'https://timetable.leoze.top',
+    backendUrl: 'https://timetable.yanze.me',
     weeksAhead: 12,
     timezone: 'Australia/Sydney',
     maxWeeks: 17,
     maxLessons: 2000,
   };
+
+  const LEGACY_BACKEND_URL = 'https://timetable.leoze.top';
 
   const SKIP_LESSON_TYPES = new Set(['note', 'holiday', 'assembly-note']);

@@ -115,7 +115,7 @@ function mountUi() {
         <h2>Seqta Link</h2>
         <div class="scs-field">
           <label for="scs-backend">Backend URL</label>
-          <input id="scs-backend" type="url" placeholder="https://timetable.leoze.top" />
+          <input id="scs-backend" type="url" placeholder="https://timetable.yanze.me" />
           <small>Base URL of your Seqta Link server (no trailing slash).</small>
         </div>
         <div class="scs-field">
@@ -137,6 +137,10 @@ function mountUi() {
           <label for="scs-weeks">Weeks to sync</label>
           <input id="scs-weeks" type="number" min="1" max="${DEFAULTS.maxWeeks}" />
           <small>Week-by-week fetch (max ${DEFAULTS.maxWeeks} weeks ≈ 119 days).</small>
+        </div>
+        <div class="scs-field">
+          <label><input id="scs-auto" type="checkbox" /> Smart Auto Sync</label>
+          <small>Check every 15 minutes while SEQTA is visible and signed in. Only the selected profile; complete one manual sync first.</small>
         </div>
         <div class="scs-field">
           <label for="scs-student">Student ref override (optional)</label>
@@ -161,6 +165,7 @@ function mountUi() {
     const weeksInput = modal.querySelector("#scs-weeks");
     /** @type {HTMLInputElement | null} */
     const studentInput = modal.querySelector("#scs-student");
+    const autoInput = modal.querySelector("#scs-auto");
 
     const profiles = loadProfiles();
     if (profileSelect) {
@@ -175,6 +180,9 @@ function mountUi() {
     if (calendarInput) calendarInput.value = config.calendarUrl;
     if (weeksInput) weeksInput.value = String(config.weeksAhead);
     if (studentInput) studentInput.value = config.studentRefOverride;
+    if (autoInput) autoInput.checked = autoEnabled(config);
+    profileSelect?.addEventListener("change",()=>{if(autoInput)autoInput.checked=false;});
+    backendInput?.addEventListener("input",()=>{if(autoInput)autoInput.checked=false;});
 
     backdrop.appendChild(modal);
     root.appendChild(backdrop);
@@ -206,6 +214,7 @@ function mountUi() {
           STORAGE.studentRefOverride,
           studentInput?.value.trim() || "",
         );
+        setAutoEnabled(loadConfig(),!!autoInput?.checked);
         backdrop.remove();
         setStatus("Settings saved.", "success");
       });
@@ -224,7 +233,7 @@ function mountUi() {
         <h2>Pair this browser</h2>
         <div class="scs-field">
           <label for="scs-backend-pair">Backend URL</label>
-          <input id="scs-backend-pair" type="url" placeholder="https://timetable.leoze.top" />
+          <input id="scs-backend-pair" type="url" placeholder="https://timetable.yanze.me" />
         </div>
         <div class="scs-field">
           <label for="scs-pair-code">Pairing code</label>
@@ -289,7 +298,7 @@ function mountUi() {
       return;
     }
 
-    const studentRef = await resolveStudentRef();
+    let studentRef;try{studentRef=await freshStudentRef(config);}catch(_){setStatus("Could not verify the current SEQTA student.","error");return;}
     const confirmed = window.confirm(
       `Current SEQTA student: ${studentRef}\nDestination account: ${config.calendarLabel}\n\nSync now?`,
     );
@@ -301,12 +310,9 @@ function mountUi() {
     setStatus("Starting sync…");
 
     try {
-      if (config.deviceToken?.startsWith("sl_dvc_")) {
-        setStatus("Checking device…");
-        await fetchDeviceStatus();
-      }
-      const { result, stats, emptySnapshotConfirmed } =
-        await runSync(setStatus);
+      const outcome = await runSync(setStatus,{config,expectedStudentRef:studentRef});
+      if(outcome.skipped){setStatus(outcome.reason,"success");return;}
+      const { result, stats, emptySnapshotConfirmed }=outcome;
       const r = result?.result || {};
       const changed = result?.changed ? " (calendar updated)" : "";
       const replayed = result?.replayed ? " [replay]" : "";
@@ -349,4 +355,5 @@ function mountUi() {
   } else {
     setStatus(`Profile: ${config.calendarLabel}`);
   }
+  startAutoSync(setStatus);
 }

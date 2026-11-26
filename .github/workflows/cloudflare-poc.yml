@@ -1,0 +1,58 @@
+name: Cloudflare Auth+D1 PoC
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cloudflare-poc/**'
+      - 'Script/**'
+      - 'package.json'
+      - '.github/workflows/cloudflare-poc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker-compat:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare-poc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Node 22 ships npm 10.9.x; npm Arborist can crash resolving Vitest 4 peers.
+      # npm CLI #9787 documents this edgesOut regression; npm >= 11.6 fixes it.
+      - name: Upgrade npm to a version with peer graph fix
+        run: npm install --global npm@11.21.1
+      - name: Install PoC dependencies (no Cloudflare credentials)
+        run: npm ci --no-audit --no-fund
+      - name: Userscript build and safety contracts
+        working-directory: .
+        run: |
+          npm run build:userscript
+          git diff --exit-code -- Script/seqta-calendar-sync.user.js
+          node --check Script/seqta-calendar-sync.user.js
+          npm run test:userscript
+      - name: Workerd + local D1 + Argon2 compatibility tests
+        run: npm test
+      - name: Synthetic SQLite migration rehearsal
+        run: python3 scripts/test_export.py
+      - name: Build without deploy and generate binding types
+        run: npm run build
+      - name: Typecheck Worker code against generated binding types
+        run: npm run typecheck
+      - name: Package isolated staging Worker
+        run: |
+          mkdir -p staging-build
+          node --input-type=module -e 'import {build} from "esbuild"; await build({entryPoints:["src/index.ts"],bundle:true,format:"esm",platform:"browser",target:"es2022",minify:true,outfile:"staging-build/worker.mjs",legalComments:"eof"});'
+          cp package-lock.json staging-build/
+          sha256sum staging-build/worker.mjs staging-build/package-lock.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: seqta-staging-build
+          path: cloudflare-poc/staging-build/
+          retention-days: 3

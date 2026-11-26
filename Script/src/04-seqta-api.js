@@ -85,7 +85,8 @@
         until,
         student: studentId,
       });
-      return Array.isArray(data?.payload?.items) ? data.payload.items : [];
+      if (!Array.isArray(data?.payload?.items)) throw new Error('SEQTA returned no timetable array.');
+      return data.payload.items;
     }
 
     const studentId = await resolveStudentId();
@@ -94,5 +95,6 @@
     if (studentId != null) body.student = studentId;
 
     const data = await postSeqtaJson('/seqta/student/load/timetable?', body);
-    return Array.isArray(data?.payload?.items) ? data.payload.items : [];
+    if (!Array.isArray(data?.payload?.items)) throw new Error('SEQTA returned no timetable array.');
+    return data.payload.items;
   }
