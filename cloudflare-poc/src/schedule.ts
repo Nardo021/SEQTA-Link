@@ -21,4 +21,4 @@ export function placeLessons(rows:LessonRow[]):Slot[]{
  if(group.length)flush();return output;
 }
 export function timeWindow(slots:Slot[]){return {start:Math.min(480,...slots.map(s=>Math.floor(s.start/60)*60)),end:Math.max(960,...slots.map(s=>Math.ceil(s.end/60)*60))};}
-export const scheduleLink=(from:string,until:string,view:"week"|"day"|"agenda",base="/app/timetable")=>base+"?from="+encodeURIComponent(from)+"&until="+encodeURIComponent(until)+"&view="+view;
+export const scheduleLink=(from:string,until:string,view:"week"|"day"|"agenda"|"biweek",base="/app/timetable")=>base+"?from="+encodeURIComponent(from)+"&until="+encodeURIComponent(until)+"&view="+view;

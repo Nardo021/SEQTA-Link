@@ -8,6 +8,7 @@ import { sessionHash } from "../src/auth";
 import schema from "../migrations/0001_schema.sql?raw";
 import subscriptionSchema from "../migrations/0002_subscription_clients.sql?raw";
 import dailySchema from "../migrations/0003_daily_experience.sql?raw";
+import workspaceSchema from "../migrations/0004_workspace_reliability.sql?raw";
 
 const pepper=new Uint8Array(32).fill(120),uidSecret=new Uint8Array(32).fill(121);
 const rawCalendar="sl_cal_fixture_please_do_not_use_as_secret",rawDevice="sl_dvc_fixture";
@@ -24,7 +25,7 @@ const key=(n:number)=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
 async function responseJson(r:Response){return await r.json() as {revision:number;changed:boolean;replayed?:boolean;syncId:string;result:{inserted:number;updated:number;removed:number;restored:number;unchanged:number};error?:{code:string};events?:{active:number}};}
 
 beforeAll(async()=>{
-  const statements=(schema+"\n"+subscriptionSchema+"\n"+dailySchema).replace(/^\s*--.*$/gm,"").split(";").map(s=>s.trim()).filter(Boolean);
+  const statements=(schema+"\n"+subscriptionSchema+"\n"+dailySchema+"\n"+workspaceSchema).replace(/^\s*--.*$/gm,"").split(";").map(s=>s.trim()).filter(Boolean);
   await db.batch(statements.map(s=>db.prepare(s)));
   await db.batch([
     db.prepare("INSERT INTO users(id,display_name,role,created_at,updated_at) VALUES (?,?,?,?,?)").bind("u1","Fixture","owner",stamp,stamp),
@@ -54,9 +55,12 @@ test("integrated D1 sync, stable UID, replay, partial/empty protection, ICS and 
   expect(body.match(/BEGIN:VEVENT/g)?.length).toBe(2);
   const firstUid=(await db.prepare("SELECT ical_uid FROM events WHERE calendar_id=? AND course_code=?").bind("c1","SUB1").first<{ical_uid:string}>())?.ical_uid;
   expect(firstUid).toBeTruthy();
-  expect(firstFeed.headers.get("ETag")).toBe('"calendar-v2-6"');
+  expect(firstFeed.headers.get("ETag")).toBe('"calendar-v3-6"');
   expect((await call(feedPath,{headers:{"If-None-Match":'"calendar-6"'}})).status).toBe(200);
-  expect((await call(feedPath,{headers:{"If-None-Match":'"calendar-v2-6"'}})).status).toBe(304);
+  expect((await call(feedPath,{headers:{"If-None-Match":'"calendar-v3-6"'}})).status).toBe(304);
+  expect((await call(feedPath,{headers:{"If-None-Match":'W/"calendar-v3-6"'}})).status).toBe(304);
+  expect((await call(feedPath,{headers:{"If-None-Match":'"calendar-v2-6"'}})).status).toBe(200);
+  expect(await (await call(feedPath)).text()).toBe(body);
   // A partial upload must not cancel the second class.
   r=await send(key(2),makeBody([lesson(1,"Music")],false));expect(r.status).toBe(200);
   result=await responseJson(r);expect(result.result.removed).toBe(0);expect(result.revision).toBe(6);
@@ -66,8 +70,9 @@ test("integrated D1 sync, stable UID, replay, partial/empty protection, ICS and 
   // A complete upload updates the first lesson and cancels the omitted one.
   r=await send(key(5),makeBody([lesson(1,"Updated Music")],true));expect(r.status).toBe(200);result=await responseJson(r);
   expect(result.result.updated).toBe(1);expect(result.result.removed).toBe(1);expect(result.revision).toBe(7);
+  const diff=await db.prepare("SELECT kind,before_json,after_json FROM worker_event_changes WHERE sync_id=? ORDER BY kind").bind(result.syncId).all<{kind:string;before_json:string;after_json:string}>();expect(diff.results.map(x=>x.kind)).toEqual(["removed","updated"]);expect(JSON.parse(diff.results[1].before_json).title).toBe("Music");expect(JSON.parse(diff.results[1].after_json).title).toBe("Updated Music");
   const changed=await call(feedPath);
-  expect(changed.headers.get("ETag")).toBe('"calendar-v2-7"');
+  expect(changed.headers.get("ETag")).toBe('"calendar-v3-7"');
   const changedBody=await changed.text();expect(changedBody).toContain("UID:"+firstUid);expect(changedBody).not.toContain("STATUS:CANCELLED");expect(changedBody.match(/BEGIN:VEVENT/g)?.length).toBe(1);
   expect((await db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id='c1' AND active=0 AND status='cancelled'").first<{n:number}>())?.n).toBe(1);
   const cancelledUid=(await db.prepare("SELECT ical_uid FROM events WHERE calendar_id='c1' AND course_code='SUB2'").first<{ical_uid:string}>())!.ical_uid;
@@ -103,11 +108,15 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  const timetable=await call("/app/timetable?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}});expect(timetable.status).toBe(200);
  const schedule=await timetable.text();expect(schedule).toContain("Previous week or day");expect(schedule).toContain("Next week or day");expect(schedule).toContain("Time-grid timetable");expect(schedule).toContain("data-start");expect(schedule).toContain("Australia/Sydney");
  expect((await call("/app/timetable?from=invalid",{headers:{Cookie:ownerCookie}})).status).toBe(400);
- expect(schedule).toContain("Live school day");expect(schedule).toContain("lesson-sheet");expect(schedule).toContain("Week B");expect(schedule).toContain("Weekly class time");
+ expect(schedule).toContain("command-palette");expect(schedule).toContain("data-course-filter");expect(schedule).toContain("2 weeks");expect(schedule).toContain("Live school day");expect(schedule).toContain("lesson-sheet");expect(schedule).toContain("Week B");expect(schedule).toContain("Weekly class time");
  expect((await postForm("/app/account",{action:"display",view:"day",hour:"12",locate:"on",terms:"Term 4 | 2026-11-23 | 2026-12-10 | A"},ownerCookie)).status).toBe(303);
  expect((await postForm("/app/account",{action:"course",course:"code:SUB1",name:"My Music",color:"2"},ownerCookie)).status).toBe(303);
  const personalized=await (await call("/app/timetable?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}})).text();expect(personalized).toContain("My Music");expect(personalized).toContain("9:00 AM");
  expect((await call("/admin/health",{headers:{Cookie:ownerCookie}})).status).toBe(200);
+ expect((await call("/api/v2/me/search?q=Music")).status).toBe(401);
+ const search=await (await call("/api/v2/me/search?q=Music",{headers:{Cookie:ownerCookie}})).json() as {results:{title:string;href:string}[]};expect(search.results.some(x=>x.title==="My Music")).toBe(true);
+ const exportResponse=await call("/app/account/export",{headers:{Cookie:ownerCookie}});expect(exportResponse.status).toBe(200);const exported=await exportResponse.text();expect(exported).toContain("Updated Music");expect(exported).not.toContain(rawCalendar);expect(exported).not.toContain("password_hash");
+ const twoWeeks=await (await call("/app/timetable?from=2026-11-23&until=2026-12-06&view=biweek",{headers:{Cookie:ownerCookie}})).text();expect(twoWeeks.match(/aria-label="Time-grid timetable"/g)?.length).toBe(2);
 
  for(const path of ["/app/calendar","/app/devices","/app/sync-history","/app/account","/admin/dashboard","/admin/users","/admin/invitations","/admin/audit"]){expect((await call(path,{headers:{Cookie:ownerCookie}})).status).toBe(200);}
 
