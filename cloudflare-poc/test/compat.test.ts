@@ -103,12 +103,13 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  expect((await call("/app/dashboard")).status).toBe(303);
  const login=await postForm("/app/login",{email:"owner@example.invalid",password:PASSWORD});expect(login.status).toBe(303);
  const ownerCookie=login.headers.get("Set-Cookie")!.split(";")[0];expect(ownerCookie).toMatch(/^seqta_session=/);
- const overview=await call("/app/dashboard",{headers:{Cookie:ownerCookie}});expect(overview.status).toBe(200);
- const overviewHtml=await overview.text();expect(overviewHtml).toContain("Upcoming lessons");expect(overviewHtml).toContain("This week");expect(overviewHtml).toContain('aria-current="page"');expect(overviewHtml).toContain('data-slot="card"');
+ const overview=await call("/app/dashboard",{headers:{Cookie:ownerCookie}});expect(overview.status).toBe(303);expect(overview.headers.get("Location")).toBe("/app/timetable");
+ const home=await call("/app/timetable",{headers:{Cookie:ownerCookie}});expect(home.status).toBe(200);
+ const homeHtml=await home.text();expect(homeHtml).toContain('aria-current="page"');expect(homeHtml).toContain("data-theme-toggle");expect(homeHtml).toContain("/assets/ui-v4.js");expect(homeHtml).not.toContain("command-palette");expect(homeHtml).not.toContain("Mobile navigation");
  const timetable=await call("/app/timetable?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}});expect(timetable.status).toBe(200);
- const schedule=await timetable.text();expect(schedule).toContain("Previous week or day");expect(schedule).toContain("Next week or day");expect(schedule).toContain("Time-grid timetable");expect(schedule).toContain("data-start");expect(schedule).toContain("Australia/Sydney");
+ const schedule=await timetable.text();expect(schedule).toContain("Previous week or day");expect(schedule).toContain("Next week or day");expect(schedule).toContain("day-list");expect(schedule).toContain("Week B");
  expect((await call("/app/timetable?from=invalid",{headers:{Cookie:ownerCookie}})).status).toBe(400);
- expect(schedule).toContain("command-palette");expect(schedule).toContain("interactive-workspace");expect(schedule).toContain("data-date-picker");expect(schedule).toContain("Mobile navigation");expect(schedule).toContain("Term dates not confirmed");expect(schedule).toContain("data-course-filter");expect(schedule).toContain("2 weeks");expect(schedule).toContain("Live school day");expect(schedule).toContain("lesson-sheet");expect(schedule).toContain("Week B");expect(schedule).toContain("Weekly class time");
+ expect(schedule).toContain("interactive-workspace");expect(schedule).toContain("data-date-picker");expect(schedule).toContain("lesson-sheet");expect(schedule).not.toContain("command-palette");expect(schedule).not.toContain("Weekly class time");expect(schedule).not.toContain("Live school day");
  expect((await postForm("/app/account",{action:"display",view:"day",hour:"12",locate:"on",terms:"Term 4 | 2026-11-23 | 2026-12-10 | A"},ownerCookie)).status).toBe(303);
  expect((await postForm("/app/account",{action:"course",course:"code:SUB1",name:"My Music",color:"2"},ownerCookie)).status).toBe(303);
  const personalized=await (await call("/app/timetable?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}})).text();expect(personalized).toContain("My Music");expect(personalized).toContain("9:00 AM");
@@ -120,7 +121,7 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
 
  for(const path of ["/app/calendar","/app/devices","/app/sync-history","/app/account","/admin/dashboard","/admin/users","/admin/invitations","/admin/audit"]){expect((await call(path,{headers:{Cookie:ownerCookie}})).status).toBe(200);}
 
- expect(overviewHtml).toContain("data-theme-toggle");expect(overviewHtml).toContain("/assets/ui-v4.js");
+ expect(homeHtml).toContain("data-theme-toggle");expect(homeHtml).toContain("/assets/ui-v4.js");
  expect((await call("/assets/ui.js")).status).toBe(200);
  const interactive=await call("/assets/interactive-v4.js");expect(interactive.status).toBe(200);expect(interactive.headers.get("Content-Type")).toContain("javascript");expect((await interactive.text()).length).toBeGreaterThan(10000);
  await db.prepare("UPDATE calendar_tokens SET status='active' WHERE id='t1'").run();
@@ -128,7 +129,7 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  expect((await postForm("/app/calendar/create",{},ownerCookie)).status).toBe(303);
  const calendarHtml=await (await call("/app/calendar",{headers:{Cookie:ownerCookie}})).text();
  const managedPath=calendarHtml.match(/\/calendar\/sl_cal_[0-9a-f]{64}\.ics/)?.[0];expect(managedPath).toBeTruthy();
- expect(calendarHtml).toContain("Copy link");expect(calendarHtml).toContain("webcal://");
+ expect(calendarHtml).toContain("Copy link");expect(calendarHtml).toContain("webcal://");expect(calendarHtml).toContain("Appearance");expect(calendarHtml).toContain("Calendar & Sync");expect(calendarHtml).toContain("Account & Devices");expect(calendarHtml).toContain("Advanced");
  expect((await postForm("/app/calendar/create",{},ownerCookie)).status).toBe(303);
  expect(await (await call("/app/calendar",{headers:{Cookie:ownerCookie}})).text()).toContain(managedPath!);
  expect((await db.prepare("SELECT count(*) AS n FROM calendar_tokens WHERE calendar_id='c1' AND status='active' AND id LIKE 'ui-v1-%'").first<{n:number}>())?.n).toBe(1);
@@ -179,7 +180,7 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  const registered=await postForm(inviteUrl!,{email:"invite@example.invalid",display_name:"Invited fixture",password:PASSWORD});expect(registered.status).toBe(303);
  expect((await call(inviteUrl!)).status).toBe(404);
  const newCookie=registered.headers.get("Set-Cookie")!.split(";")[0];
- expect((await call("/app/dashboard",{headers:{Cookie:newCookie}})).status).toBe(200);
+ expect((await call("/app/dashboard",{headers:{Cookie:newCookie}})).status).toBe(303);
 
  expect(await (await call("/app/calendar",{headers:{Cookie:newCookie}})).text()).toMatch(/\/calendar\/sl_cal_[0-9a-f]{64}\.ics/);
  expect((await postForm("/app/calendar/rotate",{confirm:"rotate"},ownerCookie)).status).toBe(303);

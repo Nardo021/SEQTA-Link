@@ -1,21 +1,16 @@
-import { preferences, savePreferences, updatePrefs, updateCourse, courseKey, displayLesson, schoolContext, potentialFree, type SchoolDay } from "./school";
-import { liveDay, schoolBadge, statsPanel, lessonSheet, preferencesPanel, termPanel } from "./daily-ui";
+import { preferences, savePreferences, updatePrefs, updateCourse, courseKey, displayLesson, schoolContext, type SchoolDay } from "./school";
+import { nowLine, lessonSheet, appearanceForm, termsForm, courseEditor } from "./daily-ui";
 import { ApiError, nowIso } from "./common";
 import { hashToken } from "./compat";
 import { managedId, managedRaw, managedSubscription, ensureSubscription, subscriptions, createNamedSubscription, renameSubscription, revokeSubscription } from "./subscription";
-import { calendarFor, checkPassword, clearCookie, createPairing, currentUser, err, form, isAdmin, login, passwordHash, randomToken, register, requireOrigin, revokeSession, sessionCookie, rateLimit, type User } from "./auth";
-import { esc, button, post, hidden, field, check, link, panel, page, table, advancedTable, fmt, action, chip, metric, panelHead, empty, todaySydney, shiftDate, weekStart, validDate, agenda, timeline, timetableControls, dayCount, notice, scheduleLink, subscriptionPanel } from "./ui";
+import { calendarFor, checkPassword, clearCookie, createPairing, currentUser, err, form, isAdmin, login, passwordHash, randomToken, register, requireOrigin, revokeSession, sessionCookie, rateLimit, type Calendar, type User } from "./auth";
+import { esc, button, post, hidden, field, check, link, panel, page, table, advancedTable, fmt, action, chip, metric, panelHead, todaySydney, shiftDate, weekStart, validDate, timeline, timetableControls, dayCount, notice, scheduleLink, subscriptionPanel, lessonList } from "./ui";
 const redirect=(path:string,cookie?:string)=>new Response(null,{status:303,headers:{Location:path,"Cache-Control":"no-store",...(cookie?{"Set-Cookie":cookie}:{})}});
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
 const rowValue=(r:Record<string,unknown>,k:string)=>esc(r[k]);
 const int=(v:string|null,min:number,max:number,fallback:number)=>{if(v===null||v==="")return fallback;const n=Number(v);if(!Number.isInteger(n)||n<min||n>max)return err("INVALID_REQUEST","Invalid numeric value.");return n;};
 const runTable=(rows:Record<string,unknown>[])=>table(["Started","Status","Received","Inserted","Updated","Removed","Restored"],rows.map(r=>[esc(fmt(r.started_at)),chip(String(r.status)),...["received_count","inserted_count","updated_count","removed_count","restored_count"].map(k=>rowValue(r,k))]));
 function audit(db:D1Database,actor:User,action:string,target:string|null){return db.prepare("INSERT INTO audit_logs(id,actor_user_id,actor_type,target_user_id,action,metadata,created_at) VALUES (?,?,?,?,?,'{}',?)").bind(crypto.randomUUID(),actor.id,actor.role,target,action,nowIso());}
-async function termDays(db:D1Database,calendarId:string,p:Awaited<ReturnType<typeof preferences>>,today:string){
- const t=p.terms.find(x=>!x.holiday&&x.from<=today&&today<=x.until);
- if(!t)return [];
- return (await db.prepare("SELECT local_date,week_label,term_label,holiday_label,checked_at FROM worker_school_days WHERE calendar_id=? AND local_date BETWEEN ? AND ? AND holiday_label IS NOT NULL").bind(calendarId,t.from,t.until).all<SchoolDay>()).results;
-}
 const scheduleColumns="id,local_date,period_key,course_code,title,starts_at_utc,ends_at_utc,teacher,room,description,event_type";
 const eventsBetween=(db:D1Database,cid:string,from:string,until:string,limit=501)=>db.prepare("SELECT "+scheduleColumns+" FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND local_date BETWEEN ? AND ? ORDER BY local_date,starts_at_utc,title LIMIT "+limit).bind(cid,from,until).all<Record<string,unknown>>();
 async function timetablePage(db:D1Database,url:URL,calendarId:string,user:User,title:string,prefix="",base="/app/timetable"){
@@ -25,18 +20,42 @@ async function timetablePage(db:D1Database,url:URL,calendarId:string,user:User,t
  const until=url.searchParams.get("until")||(requestedView==="day"?from:shiftDate(from,requestedView==="biweek"?13:6));
  if(!validDate(until)||from>until||dayCount(from,until)>120)return err("INVALID_DATE_RANGE","Choose up to 120 days.");
  const span=dayCount(from,until),view:"week"|"day"|"agenda"|"biweek"=requestedView==="biweek"&&span===14?"biweek":requestedView==="agenda"||span>7?"agenda":span===1?"day":"week";
- const mon=weekStart(from),last=shiftDate(mon,6),histFrom=shiftDate(mon,-21),histUntil=shiftDate(mon,27);
- const [r,history,days,todayRows,termHolidays]=await Promise.all([
+ const list=view==="day"||view==="agenda",mon=weekStart(from),last=shiftDate(mon,6);
+ const [r,days,todayRows,cancelledRes,changeRes]=await Promise.all([
   eventsBetween(db,calendarId,from,until),
-  eventsBetween(db,calendarId,histFrom,histUntil,2501),
   db.prepare("SELECT local_date,week_label,term_label,holiday_label,checked_at FROM worker_school_days WHERE calendar_id=? AND local_date BETWEEN ? AND ? ORDER BY local_date").bind(calendarId,from<mon?from:mon,until>last?until:last).all<SchoolDay>(),
   own?eventsBetween(db,calendarId,today,shiftDate(today,7),301):Promise.resolve(null),
-  own?termDays(db,calendarId,p,today):Promise.resolve([])
+  list?db.prepare("SELECT "+scheduleColumns+" FROM events WHERE calendar_id=? AND status='cancelled' AND local_date BETWEEN ? AND ? ORDER BY local_date,starts_at_utc LIMIT 200").bind(calendarId,from,until).all<Record<string,unknown>>():Promise.resolve({results:[] as Record<string,unknown>[]}),
+  list?db.prepare("SELECT event_id,kind FROM worker_event_changes WHERE calendar_id=? ORDER BY changed_at DESC LIMIT 80").bind(calendarId).all<{event_id:string;kind:string}>():Promise.resolve({results:[] as {event_id:string;kind:string}[]})
  ]);
- const raw=r.results.slice(0,500),hist=history.results.slice(0,2500),weekRows=hist.filter(x=>String(x.local_date)>=mon&&String(x.local_date)<=last),display=own?raw.map(x=>displayLesson(p,x)).filter(x=>!x.ui_hidden):raw;
- const free=Object.fromEntries(Array.from({length:Math.min(span,14)},(_,i)=>shiftDate(from,i)).map(date=>[date,potentialFree(hist,date,p,days.results)]));
+ const raw=r.results.slice(0,500),display=own?raw.map(x=>displayLesson(p,x)).filter(x=>!x.ui_hidden):raw;
+ const cancelled=own?cancelledRes.results.map(x=>displayLesson(p,x)).filter(x=>!x.ui_hidden):cancelledRes.results;
+ const latest=new Map<string,string>();
+ for(const c of changeRes.results)if(!latest.has(c.event_id))latest.set(c.event_id,c.kind);
+ const changed=new Set<string>();
+ for(const [id,kind] of latest)if(kind==="updated"||kind==="restored")changed.add(id);
  const calendarDays=Object.fromEntries(Array.from({length:Math.min(span,120)},(_,i)=>shiftDate(from,i)).map(date=>[date,schoolContext(date,p,days.results)]));
- return page(title,prefix+(own&&todayRows?liveDay(todayRows.results,p,base):"")+timetableControls(from,until,view,today,base,own&&p.view==="week"&&!url.search)+schoolBadge(from,p,days.results,hist)+(r.results.length>500?notice("Showing the first 500 lessons. Choose a shorter date range."):"")+(view==="agenda"?agenda(display,today,own?p.hour:"24"):view==="biweek"?timeline(display,from,shiftDate(from,6),"week",new Date(),base,own?p.hour:"24",free,calendarDays,own&&p.locate)+timeline(display,shiftDate(from,7),until,"week",new Date(),base,own?p.hour:"24",free,calendarDays,own&&p.locate):timeline(display,from,until,view,new Date(),base,own?p.hour:"24",free,calendarDays,own&&p.locate))+statsPanel(weekRows,own?p:{...p,courses:[]},from)+(own?termPanel(p,today,termHolidays):"")+lessonSheet(),user);
+ const ctx=schoolContext(from,p,days.results),hour=own?p.hour:"24" as const;
+ const showNow=!!(own&&todayRows&&!((view==="day"&&from===today)||(view==="agenda"&&from<=today&&today<=until)));
+ const schedule=list?lessonList(display,cancelled,changed,today,hour):view==="biweek"?timeline(display,from,shiftDate(from,6),"week",new Date(),base,hour,{},calendarDays,own&&p.locate)+timeline(display,shiftDate(from,7),until,"week",new Date(),base,hour,{},calendarDays,own&&p.locate):timeline(display,from,until,"week",new Date(),base,hour,{},calendarDays,own&&p.locate);
+ return page(title,prefix+timetableControls(from,until,view,today,base,own&&p.view==="week"&&!url.search,{week:ctx.week,holiday:ctx.holiday})+(showNow&&todayRows?nowLine(todayRows.results,p):"")+(r.results.length>500?notice("Showing the first 500 lessons. Choose a shorter date range."):"")+schedule+lessonSheet(),user);
+}
+const section=(id:string,title:string,body:string)=>"<section id=\""+id+"\" class=\"settings-section\"><h2>"+title+"</h2>"+body+"</section>";
+async function settingsPage(db:D1Database,pepper:Uint8Array,user:User,cal:Calendar,origin:string){
+ const [p,courses,links,devices,codes,runs,changes]=await Promise.all([
+  preferences(db,cal.id),
+  db.prepare("SELECT course_code,min(title) AS title FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' GROUP BY COALESCE(NULLIF(course_code,''),title),course_code ORDER BY title LIMIT 100").bind(cal.id).all<Record<string,unknown>>(),
+  subscriptions(db,pepper,cal.id,!!user.feed_enabled),
+  db.prepare("SELECT id,name,status,last_synced_at FROM devices WHERE owner_user_id=? ORDER BY created_at DESC").bind(user.id).all<Record<string,unknown>>(),
+  db.prepare("SELECT id,expires_at FROM pairing_codes WHERE owner_user_id=? AND used_at IS NULL AND julianday(expires_at)>julianday('now')").bind(user.id).all<Record<string,unknown>>(),
+  db.prepare("SELECT * FROM sync_runs WHERE calendar_id=? ORDER BY started_at DESC LIMIT 50").bind(cal.id).all<Record<string,unknown>>(),
+  db.prepare("SELECT kind,before_json,after_json,changed_at FROM worker_event_changes WHERE calendar_id=? ORDER BY changed_at DESC,event_id LIMIT 100").bind(cal.id).all<{kind:string;before_json:string|null;after_json:string;changed_at:string}>()
+ ]);
+ const fields=["title","local_date","starts_at_utc","ends_at_utc","teacher","room","period_key","course_code","description","event_type"];
+ const changeRows=changes.results.map(c=>{const after=JSON.parse(c.after_json) as Record<string,unknown>,before=c.before_json?JSON.parse(c.before_json) as Record<string,unknown>:null;const diff=before?fields.filter(k=>before[k]!==after[k]).map(k=>esc(k.replaceAll("_"," "))+": "+esc(before[k]??"—")+" → "+esc(after[k]??"—")).join("<br>"):"";return [esc(fmt(c.changed_at)),chip(c.kind),esc(after.title),esc(after.local_date),diff||"—"];});
+ const devicesBody=post("/app/devices/pairing-codes",button("Generate pairing code"))+table(["Device","Status","Last sync","Action"],devices.results.map(x=>[rowValue(x,"name"),rowValue(x,"status"),esc(fmt(x.last_synced_at)),x.status==="active"?post("/app/devices/"+encodeURIComponent(String(x.id))+"/revoke",button("Revoke")):""]))+(codes.results.length?table(["Pending code expires","Action"],codes.results.map(x=>[esc(fmt(x.expires_at)),post("/app/devices/pairing-codes/"+encodeURIComponent(String(x.id))+"/delete",button("Delete"))])):"");
+ const body=section("appearance","Appearance",appearanceForm(p))+section("calendar","Calendar & Sync",subscriptionPanel(origin,links,!!user.feed_enabled,fmt(cal.last_synced_at))+termsForm(p)+"<h3 class=\"settings-sub\">Sync history</h3>"+table(["When","Change","Course","Date","Details"],changeRows)+runTable(runs.results))+section("account","Account & Devices",post("/app/account",hidden("action","preferences")+field("calendar_name","Calendar name",cal.name)+button("Save"))+post("/app/account",hidden("action","password")+field("current_password","Current password","","password")+field("new_password","New password","","password")+button("Change password"))+devicesBody)+section("advanced","Advanced",courseEditor(p,courses.results)+"<div class=\"mt-3 flex flex-wrap gap-2\">"+action("/app/account/export","Download JSON")+(isAdmin(user)?action("/admin/dashboard","Administration"):"")+"</div>");
+ return page("Settings",body,user);
 }
 export async function portal(request:Request,db:D1Database,pepper:Uint8Array,secret:Uint8Array):Promise<Response>{
  const url=new URL(request.url),path=url.pathname,method=request.method,stamp=nowIso(),get=method==="GET",mut=method==="POST";
@@ -52,7 +71,7 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
  if(path==="/invite"){
   const token=url.searchParams.get("token")||"";
   if(!/^[A-Za-z0-9_-]{43}$/.test(token))return page("Invitation unavailable","",null,404);
-  if(mut){const f=await form(request);return redirect("/app/dashboard",sessionCookie(await register(db,pepper,secret,request,token,f)));}
+  if(mut){const f=await form(request);return redirect("/app/timetable",sessionCookie(await register(db,pepper,secret,request,token,f)));}
   if(get){const inv=await db.prepare("SELECT expected_name FROM invitations WHERE token_hash=? AND used_at IS NULL AND julianday(expires_at)>julianday('now')").bind(await hashToken(pepper,"invite",token)).first<{expected_name:string|null}>();if(!inv)return page("Invitation unavailable","",null,404);
    return page("Accept invitation",panel(post("/invite?token="+token,field("display_name","Name",inv.expected_name||"")+field("email","Email","","email")+field("password","Password","","password")+button("Create account"))));}
  }
@@ -127,25 +146,9 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
   if(r.results.length>10000)return err("EXPORT_TOO_LARGE","Export exceeds 10000 events; contact the administrator.",413);
   return new Response(JSON.stringify({version:1,exportedAt:stamp,calendar:{name:cal.name,revision:cal.revision},preferences:await preferences(db,cal.id),events:r.results},null,2),{headers:{"Content-Type":"application/json; charset=utf-8","Content-Disposition":"attachment; filename=seqta-timetable.json","Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"}});
  }
- if((path==="/app/"||path==="/app/dashboard")&&get){
-  const today=todaySydney(),start=weekStart(today),end=shiftDate(start,6);
-  const [totals,week,next,devices]=await db.batch([
-   db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id=? AND active=1 AND status='confirmed'").bind(cal.id),
-   db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND local_date BETWEEN ? AND ?").bind(cal.id,start,end),
-   db.prepare("SELECT id,local_date,period_key,course_code,title,starts_at_utc,ends_at_utc,teacher,room,description FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND starts_at_utc>=? ORDER BY starts_at_utc LIMIT 8").bind(cal.id,stamp),
-   db.prepare("SELECT count(*) AS n FROM devices WHERE owner_user_id=? AND status='active'").bind(user.id)
-  ]);
-  const value=(x:D1Result)=>Number((x.results[0] as {n:number}|undefined)?.n||0);
-  const cards="<div class='grid grid-cols-1 sm:grid-cols-3'>"+metric("This week",value(week),"Scheduled lessons","timetable")+metric("Connected devices",value(devices),"of "+user.max_devices+" allowed","devices")+metric("Calendar revision",cal.revision,value(totals)+" active events","sync")+"</div>";
-  const connection=panel(panelHead(cal.name,"Calendar connection and last sync",action("/app/calendar","Manage calendar"))+"<div class='panel-head'><div>"+chip(user.sync_enabled?"enabled":"disabled")+"<small>Sync permission</small></div><div>"+chip(user.feed_enabled?"enabled":"disabled")+"<small>Calendar feed</small></div><div><strong>"+esc(fmt(cal.last_synced_at))+"</strong><small>Last successful sync</small></div></div>");
-  const pref=await preferences(db,cal.id),todayRows=await eventsBetween(db,cal.id,today,shiftDate(today,7),301);
-  return page("Dashboard",liveDay(todayRows.results,pref)+termPanel(pref,today,await termDays(db,cal.id,pref,today))+cards+connection+panelHead("Upcoming lessons","Your next scheduled classes",action("/app/timetable","Open timetable"))+agenda(next.results.map(r=>displayLesson(pref,r as Record<string,unknown>)).filter(r=>!r.ui_hidden),today,pref.hour)+lessonSheet(),user);
- }
+ if((path==="/app/"||path==="/app/dashboard")&&get)return redirect("/app/timetable");
  if(path==="/app/timetable"&&get)return timetablePage(db,url,cal.id,user,"Timetable");
- if(path==="/app/calendar"&&get){
-  const links=await subscriptions(db,pepper,cal.id,!!user.feed_enabled);
-  return page("Calendar subscription",subscriptionPanel(url.origin,links,!!user.feed_enabled,fmt(cal.last_synced_at)),user);
- }
+ if(path==="/app/calendar"&&get)return settingsPage(db,pepper,user,cal,url.origin);
  if(path==="/app/calendar/create"&&mut){
   const f=await form(request),name=f.get("label");
   if(name===null)await ensureSubscription(db,pepper,user,cal);else await createNamedSubscription(db,pepper,user,cal,name);
@@ -164,17 +167,14 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
   db.prepare("INSERT INTO calendar_tokens(id,calendar_id,token_hash,token_prefix,created_at) VALUES (?,?,?,?,?)").bind(tokenId,cal.id,await hashToken(pepper,"calendar",raw),raw.slice(0,12),stamp),
   db.prepare("DELETE FROM worker_sync_guard WHERE id=?").bind(guard)
  ]);return redirect("/app/calendar");}
- if(path==="/app/devices"&&get){const r=await db.prepare("SELECT id,name,status,last_synced_at FROM devices WHERE owner_user_id=? ORDER BY created_at DESC").bind(user.id).all<Record<string,unknown>>(),codes=await db.prepare("SELECT id,expires_at FROM pairing_codes WHERE owner_user_id=? AND used_at IS NULL AND julianday(expires_at)>julianday('now')").bind(user.id).all<Record<string,unknown>>();return page("Devices",panel(panelHead("Connected browsers","Pair a new browser or revoke an existing device.")+post("/app/devices/pairing-codes",button("Generate pairing code"))+table(["Device","Status","Last sync","Action"],r.results.map(x=>[rowValue(x,"name"),rowValue(x,"status"),esc(fmt(x.last_synced_at)),x.status==="active"?post("/app/devices/"+encodeURIComponent(String(x.id))+"/revoke",button("Revoke")):""])))+panel(panelHead("Pending pairing codes","Single-use codes expire after 10 minutes.")+table(["Pending code expires","Action"],codes.results.map(x=>[esc(fmt(x.expires_at)),post("/app/devices/pairing-codes/"+encodeURIComponent(String(x.id))+"/delete",button("Delete"))]))),user);}
- if((path==="/app/devices/pairing-codes"||path==="/api/v2/me/pairing-codes")&&mut){requireOrigin(request);const result=await createPairing(db,pepper,user,cal);return path.startsWith("/api/")?json(result):page("Pairing code",panel(panelHead("Connect a browser","Enter this single-use code in the SEQTA userscript.")+"<div class='secret-box'>"+esc(result.code)+"</div><p>Expires in 10 minutes. Do not share this code.</p>"+action("/app/devices","Back to devices")),user);}
+ if(path==="/app/devices"&&get)return settingsPage(db,pepper,user,cal,url.origin);
+ if((path==="/app/devices/pairing-codes"||path==="/api/v2/me/pairing-codes")&&mut){requireOrigin(request);const result=await createPairing(db,pepper,user,cal);return path.startsWith("/api/")?json(result):page("Pairing code",panel("<div class='secret-box'>"+esc(result.code)+"</div><p>Expires in 10 minutes. Do not share this code.</p>"+action("/app/account#account","Back to settings")),user);}
  const revoke=path.match(/^\/app\/devices\/([A-Za-z0-9_-]+)\/revoke$/),apiRevoke=path.match(/^\/api\/v2\/me\/devices\/([A-Za-z0-9_-]+)$/);
  if((mut&&revoke)||(method==="DELETE"&&apiRevoke)){requireOrigin(request);const id=(revoke||apiRevoke)![1];const result=await db.prepare("UPDATE devices SET status='revoked',revoked_at=? WHERE id=? AND owner_user_id=?").bind(stamp,id,user.id).run();if(result.meta.changes!==1)return err("NOT_FOUND","Device not found.",404);return apiRevoke?json({ok:true}):redirect("/app/devices");}
  const codeDel=path.match(/^\/app\/devices\/pairing-codes\/([A-Za-z0-9_-]+)\/delete$/);if(mut&&codeDel){requireOrigin(request);await db.prepare("DELETE FROM pairing_codes WHERE id=? AND owner_user_id=? AND used_at IS NULL").bind(codeDel[1],user.id).run();return redirect("/app/devices");}
- if(path==="/app/sync-history"&&get){const r=await db.prepare("SELECT * FROM sync_runs WHERE calendar_id=? ORDER BY started_at DESC LIMIT 50").bind(cal.id).all<Record<string,unknown>>();const changes=await db.prepare("SELECT kind,before_json,after_json,changed_at FROM worker_event_changes WHERE calendar_id=? ORDER BY changed_at DESC,event_id LIMIT 100").bind(cal.id).all<{kind:string;before_json:string|null;after_json:string;changed_at:string}>();
-  const fields=["title","local_date","starts_at_utc","ends_at_utc","teacher","room","period_key","course_code","description","event_type"];
-  const rows=changes.results.map(c=>{const after=JSON.parse(c.after_json),before=c.before_json?JSON.parse(c.before_json):null;const diff=before?fields.filter(k=>before[k]!==after[k]).map(k=>esc(k.replaceAll("_"," "))+": "+esc(before[k]??"—")+" → "+esc(after[k]??"—")).join("<br>"):"";return [esc(fmt(c.changed_at)),chip(c.kind),esc(after.title),esc(after.local_date),diff||"—"];});
-  return page("Sync history",panel(panelHead("Recent changes","")+advancedTable(["When","Change","Course","Date","Details"],rows))+panel(panelHead("Recent sync runs","")+runTable(r.results)),user);}
+ if(path==="/app/sync-history"&&get)return settingsPage(db,pepper,user,cal,url.origin);
  if(path==="/app/account"){
-  if(get){const p=await preferences(db,cal.id),courses=await db.prepare("SELECT course_code,min(title) AS title FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' GROUP BY COALESCE(NULLIF(course_code,''),title),course_code ORDER BY title LIMIT 100").bind(cal.id).all<Record<string,unknown>>();return page("Account",preferencesPanel(p,courses.results)+panel(panelHead("Export timetable","",action("/app/account/export","Download JSON")))+panel(panelHead("Calendar preferences","Choose the display name of your timetable.")+post(path,hidden("action","preferences")+field("calendar_name","Calendar name",cal.name)+button("Save")))+panel(panelHead("Password","Change your password. Other sessions will be signed out.")+post(path,hidden("action","password")+field("current_password","Current password","","password")+field("new_password","New password","","password")+button("Change password"))),user);}
+  if(get)return settingsPage(db,pepper,user,cal,url.origin);
   if(mut){const f=await form(request);if(f.get("action")==="display"){await savePreferences(db,cal.id,user.id,updatePrefs(await preferences(db,cal.id),f));return redirect(path+"?notice=saved");}if(f.get("action")==="course"){const key=f.get("course")||"";const rows=await db.prepare("SELECT course_code,title FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND (CASE WHEN course_code IS NOT NULL AND course_code<>'' THEN 'code:'||course_code ELSE 'title:'||title END)=? LIMIT 1").bind(cal.id,key).first<Record<string,unknown>>();if(!rows)return err("NOT_FOUND","Course not found.",404);await savePreferences(db,cal.id,user.id,updateCourse(await preferences(db,cal.id),f,courseKey(rows)));return redirect(path+"?notice=saved");}if(f.get("action")==="preferences"){const name=(f.get("calendar_name")||"").trim().slice(0,200);if(!name)return err("INVALID_REQUEST","Calendar name required.");await db.prepare("UPDATE calendars SET name=?,revision=revision+1,last_changed_at=?,updated_at=? WHERE id=? AND name<>?").bind(name,stamp,stamp,cal.id,name).run();return redirect(path);}
    if(f.get("action")==="password"){await rateLimit(db,pepper,request,"password",user.id);if(!checkPassword(f.get("current_password")||"",user.password_hash))return err("UNAUTHORIZED","Current password incorrect.",401);const hash=passwordHash(f.get("new_password")||"");await db.batch([db.prepare("UPDATE users SET password_hash=?,updated_at=? WHERE id=? AND password_hash=? AND account_status='active'").bind(hash,stamp,user.id,user.password_hash),db.prepare("DELETE FROM sessions WHERE user_id=?").bind(user.id)]);return redirect("/app/login",clearCookie);}
   }
