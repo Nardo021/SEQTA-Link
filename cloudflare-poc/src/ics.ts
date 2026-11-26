@@ -26,7 +26,7 @@ export async function calendarFeed(db:D1Database,pepper:Uint8Array,raw:string,re
   const etag='"calendar-'+f.revision+'"';
   const headers={"Cache-Control":"private, no-cache, max-age=0, must-revalidate","ETag":etag,"Last-Modified":utcDate(f.last_changed_at||f.updated_at).toUTCString()};
   if(request.headers.get("If-None-Match")?.split(",").some(v=>v.trim().replace(/^W\//,"")===etag||v.trim()==="*"))return new Response(null,{status:304,headers});
-  const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Leoze//Seqta Link//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH","X-WR-CALNAME:"+esc(f.name),"X-WR-TIMEZONE:"+esc(f.timezone),"REFRESH-INTERVAL;VALUE=DURATION:PT1H","X-PUBLISHED-TTL:PT1H",...tzlines];
+  const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Leoze//Seqta Link//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH","X-WR-CALNAME:"+esc(f.name),"X-WR-TIMEZONE:"+esc(f.timezone),"REFRESH-INTERVAL;VALUE=DURATION:PT15M","X-PUBLISHED-TTL:PT15M",...tzlines];
   for(const e of batch[2].results as StoredEvent[]){
     const period=e.period_key.split("-").map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join("-");
     const description=[e.teacher?"Teacher: "+e.teacher:"","Period: "+period,e.course_code?"Class: "+e.course_code:"",e.description||""].filter(Boolean).join("\n");

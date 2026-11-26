@@ -1,13 +1,24 @@
 import { ApiError, nowIso } from "./common";
 import { hashToken } from "./compat";
+import { managedId, managedRaw, managedSubscription, ensureSubscription } from "./subscription";
 import { calendarFor, checkPassword, clearCookie, createPairing, currentUser, err, form, isAdmin, login, passwordHash, randomToken, register, requireOrigin, revokeSession, sessionCookie, rateLimit, type User } from "./auth";
-import { esc, button, post, hidden, field, check, link, panel, page, table, fmt, action, chip, metric, panelHead, empty, todaySydney, shiftDate, weekStart, validDate, agenda, timeline, timetableControls, dayCount, notice, scheduleLink } from "./ui";
+import { esc, button, post, hidden, field, check, link, panel, page, table, fmt, action, chip, metric, panelHead, empty, todaySydney, shiftDate, weekStart, validDate, agenda, timeline, timetableControls, dayCount, notice, scheduleLink, subscriptionPanel } from "./ui";
 const redirect=(path:string,cookie?:string)=>new Response(null,{status:303,headers:{Location:path,"Cache-Control":"no-store",...(cookie?{"Set-Cookie":cookie}:{})}});
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
 const rowValue=(r:Record<string,unknown>,k:string)=>esc(r[k]);
 const int=(v:string|null,min:number,max:number,fallback:number)=>{if(v===null||v==="")return fallback;const n=Number(v);if(!Number.isInteger(n)||n<min||n>max)return err("INVALID_REQUEST","Invalid numeric value.");return n;};
 const runTable=(rows:Record<string,unknown>[])=>table(["Started","Status","Received","Inserted","Updated","Removed","Restored"],rows.map(r=>[esc(fmt(r.started_at)),chip(String(r.status)),...["received_count","inserted_count","updated_count","removed_count","restored_count"].map(k=>rowValue(r,k))]));
 function audit(db:D1Database,actor:User,action:string,target:string|null){return db.prepare("INSERT INTO audit_logs(id,actor_user_id,actor_type,target_user_id,action,metadata,created_at) VALUES (?,?,?,?,?,'{}',?)").bind(crypto.randomUUID(),actor.id,actor.role,target,action,nowIso());}
+async function timetablePage(db:D1Database,url:URL,calendarId:string,user:User,title:string,prefix="",base="/app/timetable"){
+ const today=todaySydney(),defaultFrom=weekStart(today),from=url.searchParams.get("from")||defaultFrom;
+ if(!validDate(from))return err("INVALID_DATE_RANGE","Invalid dates.");
+ const requestedView=url.searchParams.get("view"),until=url.searchParams.get("until")||(requestedView==="day"?from:shiftDate(from,6));
+ if(!validDate(until)||from>until)return err("INVALID_DATE_RANGE","Invalid dates.");
+ const span=dayCount(from,until),view:"week"|"day"|"agenda"=requestedView==="agenda"||span>7?"agenda":span===1?"day":"week";
+ const r=await db.prepare("SELECT local_date,course_code,title,starts_at_utc,ends_at_utc,teacher,room FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND local_date BETWEEN ? AND ? ORDER BY local_date,starts_at_utc,title LIMIT 501").bind(calendarId,from,until).all<Record<string,unknown>>();
+ const rows=r.results.slice(0,500);
+ return page(title,prefix+timetableControls(from,until,view,today,base)+(r.results.length>500?notice("Showing the first 500 lessons. Choose a shorter date range to see the rest."):"")+(view==="agenda"?agenda(rows,today):timeline(rows,from,until,view,new Date(),base)),user);
+}
 export async function portal(request:Request,db:D1Database,pepper:Uint8Array,secret:Uint8Array):Promise<Response>{
  const url=new URL(request.url),path=url.pathname,method=request.method,stamp=nowIso(),get=method==="GET",mut=method==="POST";
  const user=await currentUser(db,secret,request);
@@ -31,10 +42,21 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
  if(!user)return path.startsWith("/api/")?json({error:{code:"UNAUTHORIZED",message:"Sign in required."}},401):redirect(path.startsWith("/admin/")?"/admin/login":"/app/login");
  if(path.startsWith("/admin/")&&!isAdmin(user))return page("Forbidden","",user,403);
  if(path.startsWith("/admin/")){
-  const nav="<nav class='subnav' aria-label='Administration'>"+link("/admin/dashboard","Overview")+link("/admin/users","Users")+link("/admin/invitations","Invitations")+link("/admin/audit","Audit")+"</nav>";
+  const nav="<nav class='subnav' aria-label='Administration'>"+link("/admin/dashboard","Overview")+link("/admin/users","Users")+link("/admin/timetables","Timetables")+link("/admin/invitations","Invitations")+link("/admin/audit","Audit")+"</nav>";
   if(path==="/admin/"&&get)return redirect("/admin/dashboard");
   if(path==="/admin/dashboard"&&get){const r=await db.prepare("SELECT account_status,count(*) AS count FROM users GROUP BY account_status").all<Record<string,unknown>>();return page("Administration",nav+"<div class='grid grid-cols-1 sm:grid-cols-3'>"+metric("Total accounts",r.results.reduce((n,x)=>n+Number(x.count),0),"All account states","account")+metric("Active accounts",Number(r.results.find(x=>x.account_status==="active")?.count||0),"Can sign in","admin")+metric("Suspended accounts",Number(r.results.find(x=>x.account_status==="suspended")?.count||0),"Access restricted","account")+"</div>"+panel(panelHead("Account status","Current account distribution",action("/admin/users","Manage users"))+table(["Status","Accounts"],r.results.map(x=>[chip(String(x.account_status)),rowValue(x,"count")]))),user);}
-  if(path==="/admin/users"&&get){const r=await db.prepare("SELECT id,display_name,email,role,account_status FROM users WHERE account_status<>'deleted' ORDER BY created_at DESC").all<Record<string,unknown>>();return page("Users",nav+panel(table(["Name","Email","Role","Status"],r.results.map(x=>[link("/admin/users/"+encodeURIComponent(String(x.id)),String(x.display_name)),rowValue(x,"email"),rowValue(x,"role"),chip(String(x.account_status))]))),user);}
+  if(path==="/admin/users"&&get){const r=await db.prepare("SELECT id,display_name,email,role,account_status FROM users WHERE account_status<>'deleted' ORDER BY created_at DESC").all<Record<string,unknown>>();return page("Users",nav+panel(table(["Name","Email","Role","Status","Timetable"],r.results.map(x=>[link("/admin/users/"+encodeURIComponent(String(x.id)),String(x.display_name)),rowValue(x,"email"),rowValue(x,"role"),chip(String(x.account_status)),action("/admin/timetables?user="+encodeURIComponent(String(x.id)),"View timetable")]))),user);}
+  if(path==="/admin/timetables"&&get){
+   const selected=url.searchParams.get("user");
+   const rows=await db.prepare("SELECT u.id AS user_id,u.display_name,u.account_status,c.id AS calendar_id,c.name,c.last_synced_at,(SELECT count(*) FROM events e WHERE e.calendar_id=c.id AND e.active=1 AND e.status='confirmed') AS lessons FROM users u LEFT JOIN calendars c ON c.owner_user_id=u.id WHERE u.account_status<>'deleted' AND (? IS NULL OR u.id=?) ORDER BY u.display_name,c.name").bind(selected,selected).all<Record<string,unknown>>();
+   return page("All timetables",nav+panel(panelHead("User timetables","Read-only access to every non-deleted user's timetable.")+table(["User","Calendar","Status","Active lessons","Last sync",""],rows.results.map(x=>[rowValue(x,"display_name"),rowValue(x,"name"),chip(String(x.account_status)),rowValue(x,"lessons"),esc(fmt(x.last_synced_at)),x.calendar_id?action("/admin/timetables/"+encodeURIComponent(String(x.calendar_id)),"Open timetable"):"—"]))),user);
+  }
+  const calendarMatch=path.match(/^\/admin\/timetables\/([A-Za-z0-9_-]+)$/);
+  if(calendarMatch&&get){
+   const c=await db.prepare("SELECT c.id,c.name,u.display_name FROM calendars c JOIN users u ON u.id=c.owner_user_id WHERE c.id=? AND u.account_status<>'deleted'").bind(calendarMatch[1]).first<{id:string;name:string;display_name:string}>();
+   if(!c)return page("Not found",nav,user,404);
+   return timetablePage(db,url,c.id,user,"User timetable",nav+panel(panelHead(c.display_name,c.name+" · Read only",action("/admin/timetables","All timetables"))),path);
+  }
   const targetMatch=path.match(/^\/admin\/users\/([A-Za-z0-9_-]+)$/);
   if(targetMatch){const target=await db.prepare("SELECT * FROM users WHERE id=?").bind(targetMatch[1]).first<User>();if(!target)return page("Not found","",user,404);
    const canManage=target.account_status!=="deleted"&&(target.role==="user"||(user.role==="owner"&&target.role!=="owner"));
@@ -74,23 +96,19 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
   const connection=panel(panelHead(cal.name,"Calendar connection and last sync",action("/app/calendar","Manage calendar"))+"<div class='panel-head'><div>"+chip(user.sync_enabled?"enabled":"disabled")+"<small>Sync permission</small></div><div>"+chip(user.feed_enabled?"enabled":"disabled")+"<small>Calendar feed</small></div><div><strong>"+esc(fmt(cal.last_synced_at))+"</strong><small>Last successful sync</small></div></div>");
   return page("Dashboard",cards+connection+panelHead("Upcoming lessons","Your next scheduled classes",action("/app/timetable","Open timetable"))+agenda(next.results as Record<string,unknown>[],today),user);
  }
- if(path==="/app/timetable"&&get){
-  const today=todaySydney(),defaultFrom=weekStart(today),from=url.searchParams.get("from")||defaultFrom;
-  if(!validDate(from))return err("INVALID_DATE_RANGE","Invalid dates.");
-  const requestedView=url.searchParams.get("view"),until=url.searchParams.get("until")||(requestedView==="day"?from:shiftDate(from,6));
-  if(!validDate(until)||from>until)return err("INVALID_DATE_RANGE","Invalid dates.");
-  const span=dayCount(from,until),view: "week"|"day"|"agenda"=requestedView==="agenda"||span>7?"agenda":span===1?"day":"week";
-  const r=await db.prepare("SELECT local_date,course_code,title,starts_at_utc,ends_at_utc,teacher,room FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND local_date BETWEEN ? AND ? ORDER BY local_date,starts_at_utc,title LIMIT 501").bind(cal.id,from,until).all<Record<string,unknown>>();
-  const rows=r.results.slice(0,500);
-  return page("Timetable",timetableControls(from,until,view,today)+(r.results.length>500?notice("Showing the first 500 lessons. Choose a shorter date range to see the rest."):"")+(view==="agenda"?agenda(rows,today):timeline(rows,from,until,view)),user);
+ if(path==="/app/timetable"&&get)return timetablePage(db,url,cal.id,user,"Timetable");
+ if(path==="/app/calendar"&&get){
+  const raw=user.feed_enabled?await managedSubscription(db,pepper,cal.id):null;
+  const latest=await db.prepare("SELECT max(last_used_at) AS last_used_at,count(*) AS count FROM calendar_tokens WHERE calendar_id=? AND status='active'").bind(cal.id).first<{last_used_at:string|null;count:number}>();
+  return page("Calendar subscription",subscriptionPanel(url.origin,raw,!!user.feed_enabled,fmt(latest?.last_used_at),Number(latest?.count||0),fmt(cal.last_synced_at)),user);
  }
- if(path==="/app/calendar"&&get){const r=await db.prepare("SELECT token_prefix,last_used_at FROM calendar_tokens WHERE calendar_id=? AND status='active' LIMIT 1").bind(cal.id).first<{token_prefix:string;last_used_at:string|null}>();return page("Calendar subscription",panel(panelHead("Calendar feed","Subscribe with your existing private ICS URL.")+chip(user.feed_enabled?"enabled":"disabled")+"<div><small>Current token prefix</small><code>"+esc(r?.token_prefix||"None")+"</code></div><p>Last fetched: "+esc(fmt(r?.last_used_at))+"</p>")+panel(panelHead("Replace subscription URL","Only rotate if you need a new private URL.")+"<p class='notice'>The previous URL will stop working immediately. Existing full URLs cannot be recovered.</p>"+(user.feed_enabled?post("/app/calendar/rotate",field("confirm","Type rotate to confirm")+button("Rotate subscription URL")):"<p>Feed disabled.</p>")),user);}
- if((path==="/app/calendar/rotate"||path==="/app/calendar")&&mut){const f=await form(request);if(f.get("confirm")!=="rotate"||!user.feed_enabled)return err("FORBIDDEN","Explicit rotation confirmation required.",403);const raw=randomToken("sl_cal_"),guard=crypto.randomUUID();await db.batch([
+ if(path==="/app/calendar/create"&&mut){requireOrigin(request);await ensureSubscription(db,pepper,user,cal);return redirect("/app/calendar");}
+ if((path==="/app/calendar/rotate"||path==="/app/calendar")&&mut){const f=await form(request);if(f.get("confirm")!=="rotate"||!user.feed_enabled)return err("FORBIDDEN","Explicit rotation confirmation required.",403);const tokenId=managedId(),raw=await managedRaw(pepper,cal.id,tokenId),guard=crypto.randomUUID();await db.batch([
   db.prepare("INSERT INTO worker_sync_guard(id,ok) SELECT ?,CASE WHEN EXISTS(SELECT 1 FROM users WHERE id=? AND account_status='active' AND feed_enabled=1) THEN 1 ELSE 0 END").bind(guard,user.id),
   db.prepare("UPDATE calendar_tokens SET status='revoked',revoked_at=? WHERE calendar_id=? AND status='active'").bind(stamp,cal.id),
-  db.prepare("INSERT INTO calendar_tokens(id,calendar_id,token_hash,token_prefix,created_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(),cal.id,await hashToken(pepper,"calendar",raw),raw.slice(0,12),stamp),
+  db.prepare("INSERT INTO calendar_tokens(id,calendar_id,token_hash,token_prefix,created_at) VALUES (?,?,?,?,?)").bind(tokenId,cal.id,await hashToken(pepper,"calendar",raw),raw.slice(0,12),stamp),
   db.prepare("DELETE FROM worker_sync_guard WHERE id=?").bind(guard)
- ]);return page("New subscription URL",panel("<p>Copy now. The previous token is revoked.</p><code>"+esc(url.origin+"/calendar/"+raw+".ics")+"</code>"),user);}
+ ]);return redirect("/app/calendar");}
  if(path==="/app/devices"&&get){const r=await db.prepare("SELECT id,name,status,last_synced_at FROM devices WHERE owner_user_id=? ORDER BY created_at DESC").bind(user.id).all<Record<string,unknown>>(),codes=await db.prepare("SELECT id,expires_at FROM pairing_codes WHERE owner_user_id=? AND used_at IS NULL AND julianday(expires_at)>julianday('now')").bind(user.id).all<Record<string,unknown>>();return page("Devices",panel(panelHead("Connected browsers","Pair a new browser or revoke an existing device.")+post("/app/devices/pairing-codes",button("Generate pairing code"))+table(["Device","Status","Last sync","Action"],r.results.map(x=>[rowValue(x,"name"),rowValue(x,"status"),esc(fmt(x.last_synced_at)),x.status==="active"?post("/app/devices/"+encodeURIComponent(String(x.id))+"/revoke",button("Revoke")):""])))+panel(panelHead("Pending pairing codes","Single-use codes expire after 10 minutes.")+table(["Pending code expires","Action"],codes.results.map(x=>[esc(fmt(x.expires_at)),post("/app/devices/pairing-codes/"+encodeURIComponent(String(x.id))+"/delete",button("Delete"))]))),user);}
  if((path==="/app/devices/pairing-codes"||path==="/api/v2/me/pairing-codes")&&mut){requireOrigin(request);const result=await createPairing(db,pepper,user,cal);return path.startsWith("/api/")?json(result):page("Pairing code",panel(panelHead("Connect a browser","Enter this single-use code in the SEQTA userscript.")+"<div class='secret-box'>"+esc(result.code)+"</div><p>Expires in 10 minutes. Do not share this code.</p>"+action("/app/devices","Back to devices")),user);}
  const revoke=path.match(/^\/app\/devices\/([A-Za-z0-9_-]+)\/revoke$/),apiRevoke=path.match(/^\/api\/v2\/me\/devices\/([A-Za-z0-9_-]+)$/);

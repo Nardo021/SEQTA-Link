@@ -91,6 +91,21 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  const schedule=await timetable.text();expect(schedule).toContain("Previous week or day");expect(schedule).toContain("Next week or day");expect(schedule).toContain("Time-grid timetable");expect(schedule).toContain("data-start");expect(schedule).toContain("Australia/Sydney");
  expect((await call("/app/timetable?from=invalid",{headers:{Cookie:ownerCookie}})).status).toBe(400);
  for(const path of ["/app/calendar","/app/devices","/app/sync-history","/app/account","/admin/dashboard","/admin/users","/admin/invitations","/admin/audit"]){expect((await call(path,{headers:{Cookie:ownerCookie}})).status).toBe(200);}
+
+ expect(overviewHtml).toContain("data-theme-toggle");expect(overviewHtml).toContain("/assets/ui.js");
+ expect((await call("/assets/ui.js")).status).toBe(200);
+ await db.prepare("UPDATE calendar_tokens SET status='active' WHERE id='t1'").run();
+ expect((await call("/app/calendar/create",{method:"POST",headers:{Cookie:ownerCookie}})).status).toBe(403);
+ expect((await postForm("/app/calendar/create",{},ownerCookie)).status).toBe(303);
+ const calendarHtml=await (await call("/app/calendar",{headers:{Cookie:ownerCookie}})).text();
+ const managedPath=calendarHtml.match(/\/calendar\/sl_cal_[0-9a-f]{64}\.ics/)?.[0];expect(managedPath).toBeTruthy();
+ expect(calendarHtml).toContain("Copy link");expect(calendarHtml).toContain("webcal://");
+ expect((await postForm("/app/calendar/create",{},ownerCookie)).status).toBe(303);
+ expect(await (await call("/app/calendar",{headers:{Cookie:ownerCookie}})).text()).toContain(managedPath!);
+ expect((await db.prepare("SELECT count(*) AS n FROM calendar_tokens WHERE calendar_id='c1' AND status='active' AND id LIKE 'ui-v1-%'").first<{n:number}>())?.n).toBe(1);
+ const subscribed=await call(managedPath!);expect(subscribed.status).toBe(200);const ics=await subscribed.text();expect(ics).toContain("REFRESH-INTERVAL;VALUE=DURATION:PT15M");expect(ics).toContain("BEGIN:VEVENT");
+ expect((await call(managedPath!,{headers:{"If-None-Match":subscribed.headers.get("ETag")!}})).status).toBe(304);
+ expect((await call(feedPath)).status).toBe(200);
  expect((await call("/api/v2/me/pairing-codes",{method:"POST",headers:{Cookie:ownerCookie}})).status).toBe(403);
  const codeResponse=await call("/api/v2/me/pairing-codes",{method:"POST",headers:{Cookie:ownerCookie,Origin:baseUrl}});expect(codeResponse.status).toBe(200);
  const {code}=await codeResponse.json() as {code:string};
@@ -105,7 +120,16 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
   db.prepare("INSERT INTO calendars(id,owner_user_id,name,created_at,updated_at) VALUES (?,?,?,?,?)").bind("c2","u2","Regular timetable",stamp,stamp),
   db.prepare("INSERT INTO sessions(id,user_id,session_token_hash,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?)").bind("s2","u2",await sessionHash(uidSecret,regularRaw),"2099-01-01T00:00:00Z",stamp,stamp)
  ]);
+
  expect((await call("/admin/users",{headers:{Cookie:regularCookie}})).status).toBe(403);
+ expect((await call("/admin/timetables",{headers:{Cookie:regularCookie}})).status).toBe(403);
+ expect((await call("/admin/timetables/c1",{headers:{Cookie:regularCookie}})).status).toBe(403);
+ const all=await call("/admin/timetables",{headers:{Cookie:ownerCookie}});expect(all.status).toBe(200);const allHtml=await all.text();expect(allHtml).toContain("/admin/timetables/c1");expect(allHtml).toContain("/admin/timetables/c2");expect(allHtml).not.toContain(managedPath!);
+ const adminView=await call("/admin/timetables/c1?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}});expect(adminView.status).toBe(200);const adminHtml=await adminView.text();expect(adminHtml).toContain("Updated Music");expect(adminHtml).toContain("/admin/timetables/c1?from=");expect(adminHtml).not.toContain(managedPath!);
+ expect((await call("/admin/timetables/c1",{method:"POST",headers:{Cookie:ownerCookie,Origin:baseUrl}})).status).toBe(404);
+ expect((await call("/admin/timetables/c2",{headers:{Cookie:ownerCookie}})).status).toBe(200);
+ expect((await call("/admin/timetables/unknown",{headers:{Cookie:ownerCookie}})).status).toBe(404);
+ const regularCalendar=await call("/app/calendar",{headers:{Cookie:regularCookie}});expect(await regularCalendar.text()).not.toContain(managedPath!);
  const d=await db.prepare("SELECT id FROM devices WHERE token_hash=?").bind(await hashToken(pepper,"device",deviceToken)).first<{id:string}>();
  expect((await call("/api/v2/me/devices/"+d!.id,{method:"DELETE",headers:{Cookie:regularCookie,Origin:baseUrl}})).status).toBe(404);
  const invite=await postForm("/admin/invitations",{expected_name:"Invited fixture",max_devices:"2"},ownerCookie);expect(invite.status).toBe(200);
@@ -115,6 +139,13 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  expect((await call(inviteUrl!)).status).toBe(404);
  const newCookie=registered.headers.get("Set-Cookie")!.split(";")[0];
  expect((await call("/app/dashboard",{headers:{Cookie:newCookie}})).status).toBe(200);
+
+ expect(await (await call("/app/calendar",{headers:{Cookie:newCookie}})).text()).toMatch(/\/calendar\/sl_cal_[0-9a-f]{64}\.ics/);
+ expect((await postForm("/app/calendar/rotate",{confirm:"rotate"},ownerCookie)).status).toBe(303);
+ expect((await call(managedPath!)).status).toBe(404);
+ expect((await call(feedPath)).status).toBe(404);
+ const replacement=(await (await call("/app/calendar",{headers:{Cookie:ownerCookie}})).text()).match(/\/calendar\/sl_cal_[0-9a-f]{64}\.ics/)?.[0];expect(replacement).toBeTruthy();expect(replacement).not.toBe(managedPath);
+ expect((await call(replacement!)).status).toBe(200);
  expect((await postForm("/auth/logout",{},ownerCookie)).status).toBe(303);
  expect((await call("/app/dashboard",{headers:{Cookie:ownerCookie}})).status).toBe(303);
 },30_000);

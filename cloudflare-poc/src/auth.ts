@@ -1,4 +1,5 @@
 import { ApiError, nowIso } from "./common";
+import { managedId, managedRaw } from "./subscription";
 import { hashToken, verifyArgon2Phc, verifyLegacyScrypt, createPasswordHash } from "./compat";
 export type User={id:string;display_name:string;email:string|null;password_hash:string|null;role:string;account_status:string;sync_enabled:number;feed_enabled:number;max_devices:number};
 export type Calendar={id:string;owner_user_id:string;name:string;timezone:string;revision:number;last_synced_at:string|null};
@@ -76,12 +77,12 @@ export async function register(db:D1Database,pepper:Uint8Array,secret:Uint8Array
  if(!inv)return err("INVALID_REQUEST","Invitation unavailable.",404);
  const email=(f.get("email")||"").trim().toLowerCase();if(email.length>320||!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/).test(email))return err("INVALID_REQUEST","Invalid email.");
  const display=(f.get("display_name")?.trim()||inv.expected_name||email.split("@")[0]).slice(0,200);
- const password=passwordHash(f.get("password")||""),uid=crypto.randomUUID(),cid=crypto.randomUUID(),session=randomToken(),raw=randomToken("sl_cal_"),stamp=nowIso(),guard=crypto.randomUUID();
+ const password=passwordHash(f.get("password")||""),uid=crypto.randomUUID(),cid=crypto.randomUUID(),session=randomToken(),tokenId=managedId(),raw=await managedRaw(pepper,cid,tokenId),stamp=nowIso(),guard=crypto.randomUUID();
  try{await db.batch([
   db.prepare("INSERT INTO worker_sync_guard(id,ok) SELECT ?,CASE WHEN EXISTS(SELECT 1 FROM invitations WHERE id=? AND token_hash=? AND used_at IS NULL AND julianday(expires_at)>julianday('now')) THEN 1 ELSE 0 END").bind(guard,inv.id,hash),
   db.prepare("INSERT INTO users(id,display_name,email,password_hash,role,sync_enabled,feed_enabled,max_devices,created_at,updated_at) VALUES (?,?,?,?,'user',?,?,?,?,?)").bind(uid,display,email,password,inv.sync_enabled,inv.feed_enabled,inv.max_devices,stamp,stamp),
   db.prepare("INSERT INTO calendars(id,owner_user_id,name,created_at,updated_at) VALUES (?,?,?,?,?)").bind(cid,uid,display+"'s Timetable",stamp,stamp),
-  db.prepare("INSERT INTO calendar_tokens(id,calendar_id,token_hash,token_prefix,created_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(),cid,await hashToken(pepper,"calendar",raw),raw.slice(0,12),stamp),
+  db.prepare("INSERT INTO calendar_tokens(id,calendar_id,token_hash,token_prefix,created_at) VALUES (?,?,?,?,?)").bind(tokenId,cid,await hashToken(pepper,"calendar",raw),raw.slice(0,12),stamp),
   db.prepare("INSERT INTO sessions(id,user_id,session_token_hash,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),uid,await sessionHash(secret,session),expires(10080),stamp,stamp),
   db.prepare("UPDATE invitations SET used_at=?,used_by=? WHERE id=?").bind(stamp,uid,inv.id),
   db.prepare("DELETE FROM worker_sync_guard WHERE id=?").bind(guard)

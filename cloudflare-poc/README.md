@@ -81,3 +81,7 @@ A new lightweight SSR design system replaces the temporary UI (not a port of the
 ## shadcn/ui calendar workspace
 
 User rejected the interim UI and requested the actual shadcn/ui component system. Official New York v4 registry components vendored from shadcn-ui/ui commit 0e5b2e621a9ee4cf6a604bbe6c5c0d5b70561eb4 (MIT; see SHADCN-LICENSE.md); only cn imports adapted. React static server rendering, Tailwind v4 compiled at build time, Lucide icons; no browser hydration or external CDN. Custom time-grid layout composes the shared components. Week/day/agenda navigation uses links and forms; Sydney local times, exact minute-based event positions, collision lanes, adaptive hours, page-load current-time line. Existing auth, sync, ICS and schema are unchanged. Browser visual acceptance is required before production cutover.
+
+## Calendar, admin and appearance
+
+An authenticated owner can create a reusable subscription URL without invalidating legacy links. Newly registered accounts and deliberate rotations use managed token IDs and domain-separated HMAC derivation; only normal hashes are stored, no schema migration. Creation is same-origin POST and atomic/idempotent. Rotation revokes prior links. HTTPS and webcal, 15 minute refresh hint (clients control actual polling), Staging remains Access protected. Admin GET-only timetable routes for every non-deleted user; no raw tokens exposed to admin. Dark/light/system shadcn theme, local preference, reduced-motion support, static same-origin browser script handles clipboard and current-time indicator.

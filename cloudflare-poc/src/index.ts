@@ -3,10 +3,12 @@ import { calendarFeed } from "./ics";
 import { deviceStatus, syncCalendar } from "./sync";
 import { portal } from "./portal";
 import { pairDevice } from "./auth";
+import { clientScript } from "./client-script";
 type AppEnv={DATABASE:D1Database;TOKEN_PEPPER?:string;UID_SECRET?:string;SESSION_SECRET?:string};
 function json(data:unknown,status=200){return Response.json(data,{status,headers:{"Cache-Control":"no-store"}});}
 export async function handleRequest(request:Request,env:AppEnv):Promise<Response>{
   const path=new URL(request.url).pathname;
+  if(request.method==="GET"&&path==="/assets/ui.js")return new Response(clientScript,{headers:{"Content-Type":"text/javascript; charset=utf-8","Cache-Control":"public, max-age=300","X-Content-Type-Options":"nosniff","Cross-Origin-Resource-Policy":"same-origin"}});
   if(request.method==="GET"&&path==="/health/live")return json({status:"ok"});
   if(request.method==="GET"&&path==="/health/ready"){try{await env.DATABASE.prepare("SELECT 1 FROM calendars LIMIT 1").all();return json({status:"ok"});}catch{return json({status:"unavailable"},503);}}
   const pepper=decodeSecret(env.TOKEN_PEPPER);

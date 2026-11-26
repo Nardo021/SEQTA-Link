@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 @source "./";
 @theme inline {
  --color-background:var(--background);--color-foreground:var(--foreground);
@@ -79,3 +80,30 @@
 }
 @media(max-width:640px){.lesson{grid-template-columns:64px 3px minmax(0,1fr);gap:8px}.lesson .room{grid-column:3;justify-self:start}.calendar-grid{grid-template-columns:52px repeat(var(--days),minmax(140px,1fr));min-width:calc(52px + var(--days) * 140px)}.calendar-grid[data-view=day]{grid-template-columns:52px minmax(0,1fr);min-width:0}.calendar-time-label{right:6px}}
 @media print{.no-print{display:none!important}.calendar-scroll{overflow:visible}.calendar-grid{min-width:0;grid-template-columns:48px repeat(var(--days),minmax(0,1fr))}.calendar-event{print-color-adjust:exact}}
+
+.dark{
+ color-scheme:dark;--background:oklch(.145 0 0);--foreground:oklch(.985 0 0);
+ --card:oklch(.19 0 0);--card-foreground:oklch(.985 0 0);--popover:oklch(.205 0 0);--popover-foreground:oklch(.985 0 0);
+ --primary:oklch(.922 0 0);--primary-foreground:oklch(.205 0 0);--secondary:oklch(.269 0 0);--secondary-foreground:oklch(.985 0 0);
+ --muted:oklch(.269 0 0);--muted-foreground:oklch(.708 0 0);--accent:oklch(.269 0 0);--accent-foreground:oklch(.985 0 0);
+ --destructive:oklch(.704 .191 22.216);--border:oklch(1 0 0 / 12%);--input:oklch(1 0 0 / 16%);--ring:oklch(.556 0 0);
+}
+.dark .calendar-day[data-today=true]{background-color:oklch(.21 .025 250)}
+.dark .calendar-event[data-color="0"]{--event-bg:#1c3554;--event-border:#30557c;--event-accent:#75a7f4;--event-ink:#dbeafe}
+.dark .calendar-event[data-color="1"]{--event-bg:#163c31;--event-border:#28594a;--event-accent:#6bcbb0;--event-ink:#d1fae5}
+.dark .calendar-event[data-color="2"]{--event-bg:#392d50;--event-border:#514369;--event-accent:#b5a0eb;--event-ink:#ede9fe}
+.dark .calendar-event[data-color="3"]{--event-bg:#44361d;--event-border:#69532d;--event-accent:#d9b267;--event-ink:#fef3c7}
+.dark .calendar-event[data-color="4"]{--event-bg:#4a2932;--event-border:#6c404b;--event-accent:#e995a7;--event-ink:#ffe4e6}
+.dark .calendar-event[data-color="5"]{--event-bg:#183d45;--event-border:#2c5660;--event-accent:#79cbd7;--event-ink:#cffafe}
+.dark .notice{background:#332815;border-color:#5b4524;color:#fde68a}
+.calendar-now[hidden]{display:none!important}
+@keyframes page-enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:no-preference){
+ main>div{animation:page-enter 180ms cubic-bezier(.2,.75,.25,1) both}
+ .calendar-event{transition:filter 150ms ease,box-shadow 150ms ease,border-color 150ms ease}
+ .calendar-event:hover,.calendar-event:focus-visible{filter:brightness(1.04);box-shadow:0 2px 8px #0002}
+ [data-slot=button]{transition:background-color 150ms ease,color 150ms ease,transform 120ms ease}
+ [data-slot=button]:active{transform:scale(.98)}
+ [data-slot=card]{transition:border-color 160ms ease,background-color 160ms ease}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
