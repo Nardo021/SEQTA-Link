@@ -1,5 +1,5 @@
 import {expect,test} from "vitest";
-import {defaults,parseTerms,schoolContext,clockLabel,weeklyStats,potentialFree,updateCourse,displayLesson,inferredCycle} from "../src/school";
+import {defaults,parseTerms,schoolContext,clockLabel,weeklyStats,potentialFree,updateCourse,displayLesson,inferredCycle,termProgress} from "../src/school";
 import {shiftDate} from "../src/schedule";
 const row=(date:string,period:string,start:string,end:string,course:string)=>({local_date:date,period_key:period,starts_at_utc:date+"T"+start+":00+11:00",ends_at_utc:date+"T"+end+":00+11:00",course_code:course,title:course});
 test("school labels use explicit markers or verified term anchors; missing dates not holidays",()=>{
@@ -20,4 +20,13 @@ test("free periods require complete day and repeated period slots",()=>{
 test("alternating patterns are not named A/B without confirmed school label",()=>{
  const rows=[];for(let w=0;w<4;w++)for(let d=0;d<5;d++)for(let n=0;n<3;n++){const date=shiftDate("2026-11-02",w*7+d);rows.push(row(date,"period-"+n,"09:00","09:50",w%2?"B":"A"));}
  expect(inferredCycle(rows,"2026-11-02")?.cycle).toBeTruthy();expect(inferredCycle(rows,"2026-11-02")?.cycle).not.toBe(inferredCycle(rows,"2026-11-09")?.cycle);expect(inferredCycle(rows.slice(0,10),"2026-11-02")).toBeNull();
+});
+
+test("term countdown counts calendar days after today, excludes weekends and recorded holidays from weekday estimate",()=>{
+ const p={...defaults(),terms:parseTerms("Term 4 | 2026-11-23 | 2026-12-04 | A\nHoliday | 2026-11-30 | 2026-11-30\nTerm 1 | 2027-02-01 | 2027-04-01")};
+ const r=termProgress(p,"2026-11-26",[{local_date:"2026-12-02",week_label:null,term_label:null,holiday_label:"School holiday",checked_at:""}]);
+ expect(r.term).toMatchObject({daysLeft:8,remainingWeekdays:4,weekdays:8,percent:33});
+ expect(termProgress(p,"2026-12-04").term?.daysLeft).toBe(0);
+ expect(termProgress(p,"2026-11-30").holiday).toBe("Holiday");
+ expect(termProgress(defaults(),"2026-11-26").term).toBeNull();
 });

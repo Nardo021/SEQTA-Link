@@ -99,3 +99,18 @@ export const durationLabel=(m:number)=>Math.floor(m/60)+"h "+String(m%60).padSta
 export function lessonDetails(row:LessonRow,hour:"12"|"24"="24"){
  return JSON.stringify({title:String(row.title||"Lesson"),original:String(row.original_title||row.title||""),date:String(row.local_date||""),time:lessonTime(row.starts_at_utc,hour)+" – "+lessonTime(row.ends_at_utc,hour),room:String(row.room||"—"),teacher:String(row.teacher||"—"),course:String(row.course_code||"—"),period:String(row.period_key||"—"),notes:String(row.description||"")});
 }
+
+export function termProgress(p:Prefs,date:string,days:SchoolDay[]=[]){
+ const term=p.terms.find(t=>!t.holiday&&t.from<=date&&date<=t.until);
+ const holiday=p.terms.find(t=>t.holiday&&t.from<=date&&date<=t.until);
+ const next=p.terms.find(t=>!t.holiday&&t.from>date);
+ if(!term||holiday)return {term:null,holiday:holiday?.label||null,next:next?{label:next.label,from:next.from,daysUntil:dayCount(date,next.from)-1}:null};
+ let weekdays=0,remainingWeekdays=0;
+ for(let d=term.from;d<=term.until;d=shiftDate(d,1)){
+  const dow=new Date(d+"T00:00:00Z").getUTCDay();
+  if(dow===0||dow===6||p.terms.some(t=>t.holiday&&t.from<=d&&d<=t.until)||days.some(x=>x.local_date===d&&!!x.holiday_label))continue;
+  weekdays++;if(d>date)remainingWeekdays++;
+ }
+ const total=dayCount(term.from,term.until),elapsed=dayCount(term.from,date),daysLeft=total-elapsed;
+ return {term:{label:term.label,from:term.from,until:term.until,daysLeft,remainingWeekdays,weekdays,percent:Math.round(elapsed/total*100)},holiday:null,next:next?{label:next.label,from:next.from,daysUntil:dayCount(date,next.from)-1}:null};
+}

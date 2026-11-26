@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   worker-compat:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: cloudflare-poc
@@ -45,6 +45,10 @@ jobs:
         run: npm run build
       - name: Typecheck Worker code against generated binding types
         run: npm run typecheck
+      - name: Install Chromium for browser acceptance
+        run: npx playwright install --with-deps chromium
+      - name: Interactive shadcn browser acceptance
+        run: npm run test:browser
       - name: Package isolated staging Worker
         run: |
           mkdir -p staging-build

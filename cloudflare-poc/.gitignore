@@ -3,3 +3,7 @@ src/generated-css.ts
 node_modules/
 dist/
 .cloudflare/
+
+src/generated-interactive.ts
+playwright-report/
+test-results/

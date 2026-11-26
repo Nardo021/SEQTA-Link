@@ -108,7 +108,7 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  const timetable=await call("/app/timetable?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}});expect(timetable.status).toBe(200);
  const schedule=await timetable.text();expect(schedule).toContain("Previous week or day");expect(schedule).toContain("Next week or day");expect(schedule).toContain("Time-grid timetable");expect(schedule).toContain("data-start");expect(schedule).toContain("Australia/Sydney");
  expect((await call("/app/timetable?from=invalid",{headers:{Cookie:ownerCookie}})).status).toBe(400);
- expect(schedule).toContain("command-palette");expect(schedule).toContain("data-course-filter");expect(schedule).toContain("2 weeks");expect(schedule).toContain("Live school day");expect(schedule).toContain("lesson-sheet");expect(schedule).toContain("Week B");expect(schedule).toContain("Weekly class time");
+ expect(schedule).toContain("command-palette");expect(schedule).toContain("interactive-workspace");expect(schedule).toContain("data-date-picker");expect(schedule).toContain("Mobile navigation");expect(schedule).toContain("Term dates not confirmed");expect(schedule).toContain("data-course-filter");expect(schedule).toContain("2 weeks");expect(schedule).toContain("Live school day");expect(schedule).toContain("lesson-sheet");expect(schedule).toContain("Week B");expect(schedule).toContain("Weekly class time");
  expect((await postForm("/app/account",{action:"display",view:"day",hour:"12",locate:"on",terms:"Term 4 | 2026-11-23 | 2026-12-10 | A"},ownerCookie)).status).toBe(303);
  expect((await postForm("/app/account",{action:"course",course:"code:SUB1",name:"My Music",color:"2"},ownerCookie)).status).toBe(303);
  const personalized=await (await call("/app/timetable?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}})).text();expect(personalized).toContain("My Music");expect(personalized).toContain("9:00 AM");
@@ -120,8 +120,9 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
 
  for(const path of ["/app/calendar","/app/devices","/app/sync-history","/app/account","/admin/dashboard","/admin/users","/admin/invitations","/admin/audit"]){expect((await call(path,{headers:{Cookie:ownerCookie}})).status).toBe(200);}
 
- expect(overviewHtml).toContain("data-theme-toggle");expect(overviewHtml).toContain("/assets/ui.js");
+ expect(overviewHtml).toContain("data-theme-toggle");expect(overviewHtml).toContain("/assets/ui-v4.js");
  expect((await call("/assets/ui.js")).status).toBe(200);
+ const interactive=await call("/assets/interactive-v4.js");expect(interactive.status).toBe(200);expect(interactive.headers.get("Content-Type")).toContain("javascript");expect((await interactive.text()).length).toBeGreaterThan(10000);
  await db.prepare("UPDATE calendar_tokens SET status='active' WHERE id='t1'").run();
  expect((await call("/app/calendar/create",{method:"POST",headers:{Cookie:ownerCookie}})).status).toBe(403);
  expect((await postForm("/app/calendar/create",{},ownerCookie)).status).toBe(303);
@@ -159,6 +160,7 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  ]);
 
  expect((await call("/admin/users",{headers:{Cookie:regularCookie}})).status).toBe(403);
+ expect(await (await call("/admin/users",{headers:{Cookie:ownerCookie}})).text()).toContain("data-advanced-table");
  expect((await call("/admin/health",{headers:{Cookie:regularCookie}})).status).toBe(403);
  expect((await call("/admin/timetables",{headers:{Cookie:regularCookie}})).status).toBe(403);
  expect((await call("/admin/timetables/c1",{headers:{Cookie:regularCookie}})).status).toBe(403);
