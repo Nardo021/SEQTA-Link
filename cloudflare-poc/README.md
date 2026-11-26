@@ -77,3 +77,7 @@ Run only on a host that can read the source database, using the checked-out migr
 ## Independent portal redesign
 
 A new lightweight SSR design system replaces the temporary UI (not a port of the Flask templates). Responsive sidebar/navigation, overview metrics, upcoming lessons, date-range agenda with week navigation, account/connection status, and consistent admin controls. No external fonts, scripts or CDN assets. Existing auth, mutation paths, session cookies, sync/ICS and database schema remain unchanged. The user must accept the visual result on protected staging before production cutover.
+
+## shadcn/ui calendar workspace
+
+User rejected the interim UI and requested the actual shadcn/ui component system. Official New York v4 registry components vendored from shadcn-ui/ui commit 0e5b2e621a9ee4cf6a604bbe6c5c0d5b70561eb4 (MIT; see SHADCN-LICENSE.md); only cn imports adapted. React static server rendering, Tailwind v4 compiled at build time, Lucide icons; no browser hydration or external CDN. Custom time-grid layout composes the shared components. Week/day/agenda navigation uses links and forms; Sydney local times, exact minute-based event positions, collision lanes, adaptive hours, page-load current-time line. Existing auth, sync, ICS and schema are unchanged. Browser visual acceptance is required before production cutover.

@@ -1,7 +1,7 @@
 import { ApiError, nowIso } from "./common";
 import { hashToken } from "./compat";
 import { calendarFor, checkPassword, clearCookie, createPairing, currentUser, err, form, isAdmin, login, passwordHash, randomToken, register, requireOrigin, revokeSession, sessionCookie, rateLimit, type User } from "./auth";
-import { esc, button, post, hidden, field, check, link, panel, page, table, fmt, action, chip, metric, panelHead, empty, todaySydney, shiftDate, weekStart, validDate, agenda } from "./ui";
+import { esc, button, post, hidden, field, check, link, panel, page, table, fmt, action, chip, metric, panelHead, empty, todaySydney, shiftDate, weekStart, validDate, agenda, timeline, timetableControls, dayCount, notice, scheduleLink } from "./ui";
 const redirect=(path:string,cookie?:string)=>new Response(null,{status:303,headers:{Location:path,"Cache-Control":"no-store",...(cookie?{"Set-Cookie":cookie}:{})}});
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
 const rowValue=(r:Record<string,unknown>,k:string)=>esc(r[k]);
@@ -11,9 +11,9 @@ function audit(db:D1Database,actor:User,action:string,target:string|null){return
 export async function portal(request:Request,db:D1Database,pepper:Uint8Array,secret:Uint8Array):Promise<Response>{
  const url=new URL(request.url),path=url.pathname,method=request.method,stamp=nowIso(),get=method==="GET",mut=method==="POST";
  const user=await currentUser(db,secret,request);
- if(path==="/")return get?redirect(user?"/app/dashboard":"/app/login"):new Response(null,{status:405});
+ if(path==="/")return get?redirect(user?"/app/timetable":"/app/login"):new Response(null,{status:405});
  if(path==="/app/login"||path==="/admin/login"){
-  const admin=path.startsWith("/admin"),dest=admin?"/admin/dashboard":"/app/dashboard";
+  const admin=path.startsWith("/admin"),dest=admin?"/admin/dashboard":"/app/timetable";
   if(get&&user&&(!admin||isAdmin(user)))return redirect(dest);
   const fields=field("email","Email","","email")+field("password","Password","","password")+button("Sign in");
   if(mut){const f=await form(request);try{return redirect(dest,sessionCookie(await login(db,secret,pepper,request,f.get("email")||"",f.get("password")||"",admin)));}catch(e){if(e instanceof ApiError)return page("Sign in",panel("<p>"+esc(e.message)+"</p>"+post(path,fields)),null,e.status);throw e;}}
@@ -33,7 +33,7 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
  if(path.startsWith("/admin/")){
   const nav="<nav class='subnav' aria-label='Administration'>"+link("/admin/dashboard","Overview")+link("/admin/users","Users")+link("/admin/invitations","Invitations")+link("/admin/audit","Audit")+"</nav>";
   if(path==="/admin/"&&get)return redirect("/admin/dashboard");
-  if(path==="/admin/dashboard"&&get){const r=await db.prepare("SELECT account_status,count(*) AS count FROM users GROUP BY account_status").all<Record<string,unknown>>();return page("Administration",nav+"<div class='grid'>"+metric("Total accounts",r.results.reduce((n,x)=>n+Number(x.count),0),"All account states","account")+metric("Active accounts",Number(r.results.find(x=>x.account_status==="active")?.count||0),"Can sign in","admin")+metric("Suspended accounts",Number(r.results.find(x=>x.account_status==="suspended")?.count||0),"Access restricted","account")+"</div>"+panel(panelHead("Account status","Current account distribution",action("/admin/users","Manage users"))+table(["Status","Accounts"],r.results.map(x=>[chip(String(x.account_status)),rowValue(x,"count")]))),user);}
+  if(path==="/admin/dashboard"&&get){const r=await db.prepare("SELECT account_status,count(*) AS count FROM users GROUP BY account_status").all<Record<string,unknown>>();return page("Administration",nav+"<div class='grid grid-cols-1 sm:grid-cols-3'>"+metric("Total accounts",r.results.reduce((n,x)=>n+Number(x.count),0),"All account states","account")+metric("Active accounts",Number(r.results.find(x=>x.account_status==="active")?.count||0),"Can sign in","admin")+metric("Suspended accounts",Number(r.results.find(x=>x.account_status==="suspended")?.count||0),"Access restricted","account")+"</div>"+panel(panelHead("Account status","Current account distribution",action("/admin/users","Manage users"))+table(["Status","Accounts"],r.results.map(x=>[chip(String(x.account_status)),rowValue(x,"count")]))),user);}
   if(path==="/admin/users"&&get){const r=await db.prepare("SELECT id,display_name,email,role,account_status FROM users WHERE account_status<>'deleted' ORDER BY created_at DESC").all<Record<string,unknown>>();return page("Users",nav+panel(table(["Name","Email","Role","Status"],r.results.map(x=>[link("/admin/users/"+encodeURIComponent(String(x.id)),String(x.display_name)),rowValue(x,"email"),rowValue(x,"role"),chip(String(x.account_status))]))),user);}
   const targetMatch=path.match(/^\/admin\/users\/([A-Za-z0-9_-]+)$/);
   if(targetMatch){const target=await db.prepare("SELECT * FROM users WHERE id=?").bind(targetMatch[1]).first<User>();if(!target)return page("Not found","",user,404);
@@ -70,19 +70,19 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
    db.prepare("SELECT count(*) AS n FROM devices WHERE owner_user_id=? AND status='active'").bind(user.id)
   ]);
   const value=(x:D1Result)=>Number((x.results[0] as {n:number}|undefined)?.n||0);
-  const cards="<div class='grid'>"+metric("This week",value(week),"Scheduled lessons","timetable")+metric("Connected devices",value(devices),"of "+user.max_devices+" allowed","devices")+metric("Calendar revision",cal.revision,value(totals)+" active events","sync")+"</div>";
+  const cards="<div class='grid grid-cols-1 sm:grid-cols-3'>"+metric("This week",value(week),"Scheduled lessons","timetable")+metric("Connected devices",value(devices),"of "+user.max_devices+" allowed","devices")+metric("Calendar revision",cal.revision,value(totals)+" active events","sync")+"</div>";
   const connection=panel(panelHead(cal.name,"Calendar connection and last sync",action("/app/calendar","Manage calendar"))+"<div class='panel-head'><div>"+chip(user.sync_enabled?"enabled":"disabled")+"<small>Sync permission</small></div><div>"+chip(user.feed_enabled?"enabled":"disabled")+"<small>Calendar feed</small></div><div><strong>"+esc(fmt(cal.last_synced_at))+"</strong><small>Last successful sync</small></div></div>");
-  return page("Dashboard",cards+connection+panelHead("Upcoming lessons","Your next scheduled classes",action("/app/timetable","Full timetable"))+agenda(next.results as Record<string,unknown>[],today),user);
+  return page("Dashboard",cards+connection+panelHead("Upcoming lessons","Your next scheduled classes",action("/app/timetable","Open timetable"))+agenda(next.results as Record<string,unknown>[],today),user);
  }
  if(path==="/app/timetable"&&get){
-  const today=todaySydney(),start=weekStart(today),from=url.searchParams.get("from")||start;
+  const today=todaySydney(),defaultFrom=weekStart(today),from=url.searchParams.get("from")||defaultFrom;
   if(!validDate(from))return err("INVALID_DATE_RANGE","Invalid dates.");
-  const until=url.searchParams.get("until")||shiftDate(from,6);
+  const requestedView=url.searchParams.get("view"),until=url.searchParams.get("until")||(requestedView==="day"?from:shiftDate(from,6));
   if(!validDate(until)||from>until)return err("INVALID_DATE_RANGE","Invalid dates.");
+  const span=dayCount(from,until),view: "week"|"day"|"agenda"=requestedView==="agenda"||span>7?"agenda":span===1?"day":"week";
   const r=await db.prepare("SELECT local_date,course_code,title,starts_at_utc,ends_at_utc,teacher,room FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND local_date BETWEEN ? AND ? ORDER BY local_date,starts_at_utc,title LIMIT 501").bind(cal.id,from,until).all<Record<string,unknown>>();
-  const range=(f:string,t:string)=>"/app/timetable?from="+encodeURIComponent(f)+"&until="+encodeURIComponent(t);
-  const controls=panel("<div class='toolbar'><div class='range-nav'>"+action(range(shiftDate(from,-7),shiftDate(until,-7)),"‹ Previous week")+action(range(start,shiftDate(start,6)),"This week")+action(range(shiftDate(from,7),shiftDate(until,7)),"Next week ›")+"</div><form method='get'>"+field("from","From",from,"date")+field("until","To",until,"date")+button("Apply")+"</form></div>");
-  return page("Timetable",controls+(r.results.length>500?"<p class='notice'>Showing the first 500 lessons. Choose a shorter date range to see the rest.</p>":"")+agenda(r.results.slice(0,500),today),user);
+  const rows=r.results.slice(0,500);
+  return page("Timetable",timetableControls(from,until,view,today)+(r.results.length>500?notice("Showing the first 500 lessons. Choose a shorter date range to see the rest."):"")+(view==="agenda"?agenda(rows,today):timeline(rows,from,until,view)),user);
  }
  if(path==="/app/calendar"&&get){const r=await db.prepare("SELECT token_prefix,last_used_at FROM calendar_tokens WHERE calendar_id=? AND status='active' LIMIT 1").bind(cal.id).first<{token_prefix:string;last_used_at:string|null}>();return page("Calendar subscription",panel(panelHead("Calendar feed","Subscribe with your existing private ICS URL.")+chip(user.feed_enabled?"enabled":"disabled")+"<div><small>Current token prefix</small><code>"+esc(r?.token_prefix||"None")+"</code></div><p>Last fetched: "+esc(fmt(r?.last_used_at))+"</p>")+panel(panelHead("Replace subscription URL","Only rotate if you need a new private URL.")+"<p class='notice'>The previous URL will stop working immediately. Existing full URLs cannot be recovered.</p>"+(user.feed_enabled?post("/app/calendar/rotate",field("confirm","Type rotate to confirm")+button("Rotate subscription URL")):"<p>Feed disabled.</p>")),user);}
  if((path==="/app/calendar/rotate"||path==="/app/calendar")&&mut){const f=await form(request);if(f.get("confirm")!=="rotate"||!user.feed_enabled)return err("FORBIDDEN","Explicit rotation confirmation required.",403);const raw=randomToken("sl_cal_"),guard=crypto.randomUUID();await db.batch([
