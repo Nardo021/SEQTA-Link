@@ -32,8 +32,8 @@
   }
 
   /** @param {string} body @param {string} idempotencyKey @param {boolean} [allowEmptySnapshot] */
-  async function postSyncPayload(body, idempotencyKey, allowEmptySnapshot = false) {
-    const config = loadConfig();
+  async function postSyncPayload(body, idempotencyKey, allowEmptySnapshot = false, config = loadConfig()) {
+    assertConfig(config);
     const token = config.deviceToken;
     if (!token) {
       throw new Error('No device token configured. Pair a device from the portal first.');
@@ -64,6 +64,7 @@
     }
 
     if (response.status >= 200 && response.status < 300) {
+      if (!parsed || typeof parsed !== 'object' || !Number.isInteger(parsed.revision) || !parsed.result) throw new Error('Unexpected sync response; sign in or check the server.');
       return parsed;
     }
 
@@ -103,8 +104,8 @@
   }
 
   /** @returns {Promise<object>} */
-  async function fetchDeviceStatus() {
-    const config = loadConfig();
+  async function fetchDeviceStatus(config = loadConfig()) {
+    assertConfig(config);
     const token = config.deviceToken;
     if (!token) {
       return null;
@@ -123,6 +124,7 @@
       err.status = response.status;
       throw err;
     }
+    if (!parsed || !parsed.feed || !Number.isInteger(parsed.feed.revision)) throw new Error('Unexpected device status response.');
     return parsed;
   }
 
@@ -137,4 +139,11 @@
       completeDays += Math.round((until.getTime() - from.getTime()) / 86400000) + 1;
     }
     return completeDays > 7;
+  }
+
+  async function reportAutoCheck(config,outcome,reason) {
+    try {
+      assertConfig(config);
+      await gmRequest({method:'POST',url:config.backendUrl+'/api/v2/device/check',headers:{Authorization:'Bearer '+config.deviceToken,'Content-Type':'application/json'},data:JSON.stringify({outcome,reason})});
+    } catch (_) { /* do not report arbitrary error text or credentials */ }
   }
