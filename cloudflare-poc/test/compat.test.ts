@@ -54,7 +54,9 @@ test("integrated D1 sync, stable UID, replay, partial/empty protection, ICS and 
   expect(body.match(/BEGIN:VEVENT/g)?.length).toBe(2);
   const firstUid=(await db.prepare("SELECT ical_uid FROM events WHERE calendar_id=? AND course_code=?").bind("c1","SUB1").first<{ical_uid:string}>())?.ical_uid;
   expect(firstUid).toBeTruthy();
-  expect((await call(feedPath,{headers:{"If-None-Match":'"calendar-6"'}})).status).toBe(304);
+  expect(firstFeed.headers.get("ETag")).toBe('"calendar-v2-6"');
+  expect((await call(feedPath,{headers:{"If-None-Match":'"calendar-6"'}})).status).toBe(200);
+  expect((await call(feedPath,{headers:{"If-None-Match":'"calendar-v2-6"'}})).status).toBe(304);
   // A partial upload must not cancel the second class.
   r=await send(key(2),makeBody([lesson(1,"Music")],false));expect(r.status).toBe(200);
   result=await responseJson(r);expect(result.result.removed).toBe(0);expect(result.revision).toBe(6);
@@ -65,12 +67,16 @@ test("integrated D1 sync, stable UID, replay, partial/empty protection, ICS and 
   r=await send(key(5),makeBody([lesson(1,"Updated Music")],true));expect(r.status).toBe(200);result=await responseJson(r);
   expect(result.result.updated).toBe(1);expect(result.result.removed).toBe(1);expect(result.revision).toBe(7);
   const changed=await call(feedPath);
-  expect(changed.headers.get("ETag")).toBe('"calendar-7"');
-  const changedBody=await changed.text();expect(changedBody).toContain("UID:"+firstUid);expect(changedBody).toContain("STATUS:CANCELLED");
+  expect(changed.headers.get("ETag")).toBe('"calendar-v2-7"');
+  const changedBody=await changed.text();expect(changedBody).toContain("UID:"+firstUid);expect(changedBody).not.toContain("STATUS:CANCELLED");expect(changedBody.match(/BEGIN:VEVENT/g)?.length).toBe(1);
+  expect((await db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id='c1' AND active=0 AND status='cancelled'").first<{n:number}>())?.n).toBe(1);
+  const cancelledUid=(await db.prepare("SELECT ical_uid FROM events WHERE calendar_id='c1' AND course_code='SUB2'").first<{ical_uid:string}>())!.ical_uid;
+  expect(changedBody).not.toContain("UID:"+cancelledUid);
   const status=await call("/api/v2/status",{headers:auth});expect(status.status).toBe(200);expect((await responseJson(status)).events?.active).toBe(1);
   // Restoration retains the stored UID and advances sequence/revision.
   r=await send(key(6),makeBody([lesson(1,"Updated Music"),lesson(2,"Business")],true));expect(r.status).toBe(200);result=await responseJson(r);
   expect(result.result.restored).toBe(1);expect(result.revision).toBe(8);
+  const restoredBody=await (await call(feedPath)).text();expect(restoredBody).toContain("UID:"+cancelledUid);expect(restoredBody).not.toContain("STATUS:CANCELLED");expect(restoredBody.match(/BEGIN:VEVENT/g)?.length).toBe(2);
   expect((await db.prepare("SELECT ical_uid FROM events WHERE calendar_id=? AND course_code=?").bind("c1","SUB1").first<{ical_uid:string}>())?.ical_uid).toBe(firstUid);
   const marked={...makeBody([lesson(1,"Updated Music"),lesson(2,"Business")],true),schoolDays:[{date:"2026-11-24",week:"B",term:"Term 4"}]};
   expect((await send(key(20),marked)).status).toBe(200);
