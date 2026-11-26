@@ -73,3 +73,7 @@ Implemented Worker-rendered user and admin pages, existing session hash compatib
 ## Private migration export
 
 Run only on a host that can read the source database, using the checked-out migration branch. Example: `python3 cloudflare-poc/scripts/export_sqlite.py --source /var/lib/seqta-calendar/seqta.db --output /secure/private-new-export`. This creates a new private directory, an online SQLite backup, a data-only SQL file and a per-table parity manifest. The source is opened read-only. All 12 original tables are replayed against the shipped target schema in memory and compared by counts and exact deterministic row digests before acceptance. The output is sensitive: never commit, upload to CI or share it. If export fails, do not use the incomplete files. Remote D1 import and parity validation remain a staging task. Import into a fresh database after applying 0001_schema.sql; do not import into an existing populated D1 database. No production export or deployment performed by this PR.
+
+## Independent portal redesign
+
+A new lightweight SSR design system replaces the temporary UI (not a port of the Flask templates). Responsive sidebar/navigation, overview metrics, upcoming lessons, date-range agenda with week navigation, account/connection status, and consistent admin controls. No external fonts, scripts or CDN assets. Existing auth, mutation paths, session cookies, sync/ICS and database schema remain unchanged. The user must accept the visual result on protected staging before production cutover.

@@ -47,3 +47,7 @@ jobs:
           name: seqta-staging-build
           path: cloudflare-poc/staging-build/
           retention-days: 3
+      # Public source bundle only; temporary connector handoff for this staging redesign.
+      - name: Export staging bundle for deployment
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const b=fs.readFileSync("staging-build/worker.mjs").toString("base64"); console.log("SEQTA_UI_BEGIN "+b.length); for(let i=0;i<b.length;i+=2000)console.log("SEQTA_UI_CHUNK "+b.slice(i,i+2000)); console.log("SEQTA_UI_END");'

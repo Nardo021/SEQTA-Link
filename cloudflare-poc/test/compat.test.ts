@@ -85,8 +85,12 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  expect((await call("/app/dashboard")).status).toBe(303);
  const login=await postForm("/app/login",{email:"owner@example.invalid",password:PASSWORD});expect(login.status).toBe(303);
  const ownerCookie=login.headers.get("Set-Cookie")!.split(";")[0];expect(ownerCookie).toMatch(/^seqta_session=/);
- expect((await call("/app/dashboard",{headers:{Cookie:ownerCookie}})).status).toBe(200);
- expect((await call("/admin/dashboard",{headers:{Cookie:ownerCookie}})).status).toBe(200);
+ const overview=await call("/app/dashboard",{headers:{Cookie:ownerCookie}});expect(overview.status).toBe(200);
+ const overviewHtml=await overview.text();expect(overviewHtml).toContain("Upcoming lessons");expect(overviewHtml).toContain("This week");expect(overviewHtml).toContain("aria-current='page'");
+ const timetable=await call("/app/timetable?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}});expect(timetable.status).toBe(200);
+ const schedule=await timetable.text();expect(schedule).toContain("Previous week");expect(schedule).toContain("Next week");expect(schedule).toContain("Sydney time");
+ expect((await call("/app/timetable?from=invalid",{headers:{Cookie:ownerCookie}})).status).toBe(400);
+ for(const path of ["/app/calendar","/app/devices","/app/sync-history","/app/account","/admin/dashboard","/admin/users","/admin/invitations","/admin/audit"]){expect((await call(path,{headers:{Cookie:ownerCookie}})).status).toBe(200);}
  expect((await call("/api/v2/me/pairing-codes",{method:"POST",headers:{Cookie:ownerCookie}})).status).toBe(403);
  const codeResponse=await call("/api/v2/me/pairing-codes",{method:"POST",headers:{Cookie:ownerCookie,Origin:baseUrl}});expect(codeResponse.status).toBe(200);
  const {code}=await codeResponse.json() as {code:string};
