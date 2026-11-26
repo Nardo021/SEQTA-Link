@@ -27,7 +27,7 @@ jobs:
       - name: Upgrade npm to a version with peer graph fix
         run: npm install --global npm@11.21.1
       - name: Install PoC dependencies (no Cloudflare credentials)
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Workerd + local D1 + Argon2 compatibility tests
         run: npm test
       - name: Synthetic SQLite migration rehearsal
@@ -47,7 +47,3 @@ jobs:
           name: seqta-staging-build
           path: cloudflare-poc/staging-build/
           retention-days: 3
-      # Temporary dependency bootstrap and source-only artifact handoff. No real data or secrets.
-      - name: Export staging bundle and updated lockfile
-        run: |
-          node --input-type=module -e 'import fs from "node:fs"; for(const name of ["worker.mjs","package-lock.json"]){const b=fs.readFileSync("staging-build/"+name).toString("base64"); console.log("SEQTA_SHADCN_BEGIN "+name+" "+b.length); for(let i=0;i<b.length;i+=2000)console.log("SEQTA_SHADCN_CHUNK "+name+" "+b.slice(i,i+2000)); console.log("SEQTA_SHADCN_END "+name);}'
