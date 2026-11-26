@@ -47,7 +47,3 @@ jobs:
           name: seqta-staging-build
           path: cloudflare-poc/staging-build/
           retention-days: 3
-      # One-time public-code artifact bridge, never production data or secrets.
-      - name: Export staging bundle
-        run: |
-          node --input-type=module -e 'import fs from "node:fs"; const b=fs.readFileSync("staging-build/worker.mjs").toString("base64"); console.log("SEQTA_ENHANCE_BEGIN "+b.length); for(let i=0;i<b.length;i+=2000)console.log("SEQTA_ENHANCE_CHUNK "+b.slice(i,i+2000)); console.log("SEQTA_ENHANCE_END");'
