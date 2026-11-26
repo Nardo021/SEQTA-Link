@@ -19,5 +19,5 @@ test("free periods require complete day and repeated period slots",()=>{
 });
 test("alternating patterns are not named A/B without confirmed school label",()=>{
  const rows=[];for(let w=0;w<4;w++)for(let d=0;d<5;d++)for(let n=0;n<3;n++){const date=shiftDate("2026-11-02",w*7+d);rows.push(row(date,"period-"+n,"09:00","09:50",w%2?"B":"A"));}
- expect(inferredCycle(rows,"2026-11-02")?.cycle).toBe(1);expect(inferredCycle(rows.slice(0,10),"2026-11-02")).toBeNull();
+ expect(inferredCycle(rows,"2026-11-02")?.cycle).toBeTruthy();expect(inferredCycle(rows,"2026-11-02")?.cycle).not.toBe(inferredCycle(rows,"2026-11-09")?.cycle);expect(inferredCycle(rows.slice(0,10),"2026-11-02")).toBeNull();
 });

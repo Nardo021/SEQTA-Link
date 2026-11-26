@@ -72,7 +72,7 @@ export function inferredCycle(rows:LessonRow[],date:string){
   if(s.some(x=>!x))continue;
   const [a,b,c,d]=s as Set<string>[];
   const same=Math.min(similarity(a,c),similarity(b,d)),cross=Math.max(similarity(a,b),similarity(c,d));
-  if(same>=.72&&same-cross>=.20)return {cycle:(-offset)%2+1,evidence:"Repeated four-week pattern"};
+  if(same>=.72&&same-cross>=.20)return {cycle:((Math.floor((Date.parse(target+"T00:00:00Z")-Date.parse("1970-01-05T00:00:00Z"))/604800000)%2+2)%2)+1,evidence:"Repeated four-week pattern"};
  }
  return null;
 }

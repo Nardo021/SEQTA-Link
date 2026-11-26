@@ -113,13 +113,14 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
   const [totals,week,next,devices]=await db.batch([
    db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id=? AND active=1 AND status='confirmed'").bind(cal.id),
    db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND local_date BETWEEN ? AND ?").bind(cal.id,start,end),
-   db.prepare("SELECT local_date,course_code,title,starts_at_utc,ends_at_utc,teacher,room FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND starts_at_utc>=? ORDER BY starts_at_utc LIMIT 8").bind(cal.id,stamp),
+   db.prepare("SELECT id,local_date,period_key,course_code,title,starts_at_utc,ends_at_utc,teacher,room,description FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND starts_at_utc>=? ORDER BY starts_at_utc LIMIT 8").bind(cal.id,stamp),
    db.prepare("SELECT count(*) AS n FROM devices WHERE owner_user_id=? AND status='active'").bind(user.id)
   ]);
   const value=(x:D1Result)=>Number((x.results[0] as {n:number}|undefined)?.n||0);
   const cards="<div class='grid grid-cols-1 sm:grid-cols-3'>"+metric("This week",value(week),"Scheduled lessons","timetable")+metric("Connected devices",value(devices),"of "+user.max_devices+" allowed","devices")+metric("Calendar revision",cal.revision,value(totals)+" active events","sync")+"</div>";
   const connection=panel(panelHead(cal.name,"Calendar connection and last sync",action("/app/calendar","Manage calendar"))+"<div class='panel-head'><div>"+chip(user.sync_enabled?"enabled":"disabled")+"<small>Sync permission</small></div><div>"+chip(user.feed_enabled?"enabled":"disabled")+"<small>Calendar feed</small></div><div><strong>"+esc(fmt(cal.last_synced_at))+"</strong><small>Last successful sync</small></div></div>");
-  return page("Dashboard",cards+connection+panelHead("Upcoming lessons","Your next scheduled classes",action("/app/timetable","Open timetable"))+agenda(next.results as Record<string,unknown>[],today),user);
+  const pref=await preferences(db,cal.id),todayRows=await eventsBetween(db,cal.id,today,shiftDate(today,7),301);
+  return page("Dashboard",liveDay(todayRows.results,pref)+cards+connection+panelHead("Upcoming lessons","Your next scheduled classes",action("/app/timetable","Open timetable"))+agenda(next.results.map(r=>displayLesson(pref,r as Record<string,unknown>)).filter(r=>!r.ui_hidden),today,pref.hour)+lessonSheet(),user);
  }
  if(path==="/app/timetable"&&get)return timetablePage(db,url,cal.id,user,"Timetable");
  if(path==="/app/calendar"&&get){
