@@ -19,13 +19,14 @@ export async function calendarFeed(db:D1Database,pepper:Uint8Array,raw:string,re
   const batch=await db.batch([
     db.prepare("SELECT c.*,u.account_status,u.feed_enabled,t.status AS token_status FROM calendar_tokens t JOIN calendars c ON c.id=t.calendar_id JOIN users u ON u.id=c.owner_user_id WHERE t.token_hash=? AND t.status='active'").bind(hash),
     db.prepare("UPDATE calendar_tokens SET last_used_at=? WHERE token_hash=? AND status='active' AND EXISTS(SELECT 1 FROM calendars c JOIN users u ON u.id=c.owner_user_id WHERE c.id=calendar_tokens.calendar_id AND u.account_status='active' AND u.feed_enabled=1)").bind(stamp,hash),
-    db.prepare("SELECT e.* FROM events e JOIN calendar_tokens t ON t.calendar_id=e.calendar_id JOIN calendars c ON c.id=e.calendar_id JOIN users u ON u.id=c.owner_user_id WHERE t.token_hash=? AND t.status='active' AND u.account_status='active' AND u.feed_enabled=1 AND (e.active=1 OR e.status='cancelled') ORDER BY e.starts_at_utc,e.ical_uid").bind(hash),
+    db.prepare("SELECT e.* FROM events e JOIN calendar_tokens t ON t.calendar_id=e.calendar_id JOIN calendars c ON c.id=e.calendar_id JOIN users u ON u.id=c.owner_user_id WHERE t.token_hash=? AND t.status='active' AND u.account_status='active' AND u.feed_enabled=1 AND e.active=1 AND e.status='confirmed' ORDER BY e.starts_at_utc,e.ical_uid").bind(hash),
     db.prepare("INSERT INTO calendar_subscription_clients(token_id,client,first_seen_at,last_seen_at,fetch_count) SELECT t.id,?,?,?,1 FROM calendar_tokens t JOIN calendars c ON c.id=t.calendar_id JOIN users u ON u.id=c.owner_user_id WHERE t.token_hash=? AND t.status='active' AND u.account_status='active' AND u.feed_enabled=1 ON CONFLICT(token_id,client) DO UPDATE SET last_seen_at=excluded.last_seen_at,fetch_count=calendar_subscription_clients.fetch_count+1").bind(client,stamp,stamp,hash)
   ]);
   const f=batch[0].results[0] as Feed|undefined;
   if(!f)return new Response(null,{status:404});
   if(f.account_status!=="active"||f.feed_enabled!==1)return new Response("Calendar feed is disabled.",{status:410});
-  const etag='"calendar-'+f.revision+'"';
+  // Version the representation: existing subscribers must fetch a fresh active-only snapshot even without a timetable revision change.
+  const etag='"calendar-v2-'+f.revision+'"';
   const headers={"Cache-Control":"private, no-cache, max-age=0, must-revalidate","ETag":etag,"Last-Modified":utcDate(f.last_changed_at||f.updated_at).toUTCString()};
   if(request.headers.get("If-None-Match")?.split(",").some(v=>v.trim().replace(/^W\//,"")===etag||v.trim()==="*"))return new Response(null,{status:304,headers});
   const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Leoze//Seqta Link//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH","X-WR-CALNAME:"+esc(f.name),"X-WR-TIMEZONE:"+esc(f.timezone),"REFRESH-INTERVAL;VALUE=DURATION:PT15M","X-PUBLISHED-TTL:PT15M",...tzlines];
@@ -34,7 +35,7 @@ export async function calendarFeed(db:D1Database,pepper:Uint8Array,raw:string,re
     const description=[e.teacher?"Teacher: "+e.teacher:"","Period: "+period,e.course_code?"Class: "+e.course_code:"",e.description||""].filter(Boolean).join("\n");
     lines.push("BEGIN:VEVENT","UID:"+esc(e.ical_uid),"DTSTAMP:"+utc(stamp),"CREATED:"+utc(e.created_at),"LAST-MODIFIED:"+utc(e.updated_at),"SEQUENCE:"+e.sequence,"DTSTART;TZID="+f.timezone+":"+local(e.starts_at_utc,f.timezone),"DTEND;TZID="+f.timezone+":"+local(e.ends_at_utc,f.timezone),"SUMMARY:"+esc(e.title+(e.room?.trim()?" "+e.room.trim():"")));
     if(e.room)lines.push("LOCATION:"+esc(e.room));
-    lines.push("DESCRIPTION:"+esc(description),"STATUS:"+(e.status==="cancelled"?"CANCELLED":"CONFIRMED"),"TRANSP:OPAQUE","END:VEVENT");
+    lines.push("DESCRIPTION:"+esc(description),"STATUS:CONFIRMED","TRANSP:OPAQUE","END:VEVENT");
   }
   lines.push("END:VCALENDAR","");
   return new Response(lines.map(fold).join("\r\n"),{headers:{...headers,"Content-Type":"text/calendar; charset=utf-8"}});
