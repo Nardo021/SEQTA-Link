@@ -10,7 +10,7 @@ function json(data:unknown,status=200){return Response.json(data,{status,headers
 export async function handleRequest(request:Request,env:AppEnv):Promise<Response>{
   const path=new URL(request.url).pathname;
   if(request.method==="GET"&&path==="/assets/interactive-v4.js")return new Response(interactiveScript,{headers:{"Content-Type":"text/javascript; charset=utf-8","Cache-Control":"public, max-age=3600","X-Content-Type-Options":"nosniff","Cross-Origin-Resource-Policy":"same-origin"}});
-  if(request.method==="GET"&&path==="/assets/ui.js")return new Response(clientScript,{headers:{"Content-Type":"text/javascript; charset=utf-8","Cache-Control":"public, max-age=300","X-Content-Type-Options":"nosniff","Cross-Origin-Resource-Policy":"same-origin"}});
+  if(request.method==="GET"&&(path==="/assets/ui.js"||path==="/assets/ui-v4.js"))return new Response(clientScript,{headers:{"Content-Type":"text/javascript; charset=utf-8","Cache-Control":"public, max-age=300","X-Content-Type-Options":"nosniff","Cross-Origin-Resource-Policy":"same-origin"}});
   if(request.method==="GET"&&(path==="/health/live"||path==="/health"))return json({status:"ok"});
   if(request.method==="GET"&&path==="/health/ready"){try{await env.DATABASE.batch(["calendars","worker_event_changes","worker_calendar_preferences","calendar_subscription_clients"].map(t=>env.DATABASE.prepare("SELECT 1 FROM "+t+" LIMIT 1")));if(!decodeSecret(env.TOKEN_PEPPER)||!decodeSecret(env.UID_SECRET)||!decodeSecret(env.SESSION_SECRET))return json({status:"unavailable"},503);return json({status:"ok"});}catch{return json({status:"unavailable"},503);}}
   const pepper=decodeSecret(env.TOKEN_PEPPER);

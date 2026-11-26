@@ -120,7 +120,7 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
 
  for(const path of ["/app/calendar","/app/devices","/app/sync-history","/app/account","/admin/dashboard","/admin/users","/admin/invitations","/admin/audit"]){expect((await call(path,{headers:{Cookie:ownerCookie}})).status).toBe(200);}
 
- expect(overviewHtml).toContain("data-theme-toggle");expect(overviewHtml).toContain("/assets/ui.js");
+ expect(overviewHtml).toContain("data-theme-toggle");expect(overviewHtml).toContain("/assets/ui-v4.js");
  expect((await call("/assets/ui.js")).status).toBe(200);
  const interactive=await call("/assets/interactive-v4.js");expect(interactive.status).toBe(200);expect(interactive.headers.get("Content-Type")).toContain("javascript");expect((await interactive.text()).length).toBeGreaterThan(10000);
  await db.prepare("UPDATE calendar_tokens SET status='active' WHERE id='t1'").run();
