@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   worker-compat:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: cloudflare-poc
@@ -29,10 +29,7 @@ jobs:
       - name: Upgrade npm to a version with peer graph fix
         run: npm install --global npm@11.21.1
       - name: Install PoC dependencies (no Cloudflare credentials)
-        run: npm install --no-audit --no-fund
-      - name: Export resolved lockfile
-        run: |
-          node --input-type=module -e 'import fs from "node:fs"; const b=fs.readFileSync("package-lock.json").toString("base64"); console.log("SEQTA_V4_LOCK_BEGIN "+b.length); for(let i=0;i<b.length;i+=2000)console.log("SEQTA_V4_LOCK_CHUNK "+b.slice(i,i+2000)); console.log("SEQTA_V4_LOCK_END");'
+        run: npm ci --no-audit --no-fund
       - name: Userscript build and safety contracts
         working-directory: .
         run: |
