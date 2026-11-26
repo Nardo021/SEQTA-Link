@@ -26,5 +26,8 @@
     "vite.config.ts",
     "vitest.config.ts",
     ".cloudflare/types"
+  ],
+  "exclude": [
+    "src/browser/**"
   ]
 }
