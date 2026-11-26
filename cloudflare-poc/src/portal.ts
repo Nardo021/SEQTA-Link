@@ -1,6 +1,6 @@
 import { ApiError, nowIso } from "./common";
 import { hashToken } from "./compat";
-import { managedId, managedRaw, managedSubscription, ensureSubscription } from "./subscription";
+import { managedId, managedRaw, managedSubscription, ensureSubscription, subscriptions, createNamedSubscription, renameSubscription, revokeSubscription } from "./subscription";
 import { calendarFor, checkPassword, clearCookie, createPairing, currentUser, err, form, isAdmin, login, passwordHash, randomToken, register, requireOrigin, revokeSession, sessionCookie, rateLimit, type User } from "./auth";
 import { esc, button, post, hidden, field, check, link, panel, page, table, fmt, action, chip, metric, panelHead, empty, todaySydney, shiftDate, weekStart, validDate, agenda, timeline, timetableControls, dayCount, notice, scheduleLink, subscriptionPanel } from "./ui";
 const redirect=(path:string,cookie?:string)=>new Response(null,{status:303,headers:{Location:path,"Cache-Control":"no-store",...(cookie?{"Set-Cookie":cookie}:{})}});
@@ -98,11 +98,21 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
  }
  if(path==="/app/timetable"&&get)return timetablePage(db,url,cal.id,user,"Timetable");
  if(path==="/app/calendar"&&get){
-  const raw=user.feed_enabled?await managedSubscription(db,pepper,cal.id):null;
-  const latest=await db.prepare("SELECT max(last_used_at) AS last_used_at,count(*) AS count FROM calendar_tokens WHERE calendar_id=? AND status='active'").bind(cal.id).first<{last_used_at:string|null;count:number}>();
-  return page("Calendar subscription",subscriptionPanel(url.origin,raw,!!user.feed_enabled,fmt(latest?.last_used_at),Number(latest?.count||0),fmt(cal.last_synced_at)),user);
+  const links=await subscriptions(db,pepper,cal.id,!!user.feed_enabled);
+  return page("Calendar subscription",subscriptionPanel(url.origin,links,!!user.feed_enabled,fmt(cal.last_synced_at)),user);
  }
- if(path==="/app/calendar/create"&&mut){requireOrigin(request);await ensureSubscription(db,pepper,user,cal);return redirect("/app/calendar");}
+ if(path==="/app/calendar/create"&&mut){
+  const f=await form(request),name=f.get("label");
+  if(name===null)await ensureSubscription(db,pepper,user,cal);else await createNamedSubscription(db,pepper,user,cal,name);
+  return redirect("/app/calendar");
+ }
+ const subscriptionMatch=path.match(/^\/app\/calendar\/subscriptions\/([A-Za-z0-9_-]+)\/(rename|revoke)$/);
+ if(subscriptionMatch&&mut){
+  const f=await form(request),id=subscriptionMatch[1];
+  if(subscriptionMatch[2]==="rename")await renameSubscription(db,user,cal,id,f.get("label")||"");
+  else{if(f.get("confirm")!=="revoke")return err("INVALID_REQUEST","Explicit revoke confirmation required.");await revokeSubscription(db,user,cal,id);}
+  return redirect("/app/calendar");
+ }
  if((path==="/app/calendar/rotate"||path==="/app/calendar")&&mut){const f=await form(request);if(f.get("confirm")!=="rotate"||!user.feed_enabled)return err("FORBIDDEN","Explicit rotation confirmation required.",403);const tokenId=managedId(),raw=await managedRaw(pepper,cal.id,tokenId),guard=crypto.randomUUID();await db.batch([
   db.prepare("INSERT INTO worker_sync_guard(id,ok) SELECT ?,CASE WHEN EXISTS(SELECT 1 FROM users WHERE id=? AND account_status='active' AND feed_enabled=1) THEN 1 ELSE 0 END").bind(guard,user.id),
   db.prepare("UPDATE calendar_tokens SET status='revoked',revoked_at=? WHERE calendar_id=? AND status='active'").bind(stamp,cal.id),

@@ -1,5 +1,6 @@
 import { utcDate, sydneyParts, nowIso } from "./common";
 import { hashToken } from "./compat";
+import { classifyClient } from "./subscription";
 type Feed={id:string;name:string;timezone:string;revision:number;account_status:string;feed_enabled:number;last_changed_at:string|null;updated_at:string;token_status:string};
 export type StoredEvent={id:string;owner_user_id:string;calendar_id:string;natural_key:string;ical_uid:string;local_date:string;period_key:string;course_code:string|null;title:string;starts_at_utc:string;ends_at_utc:string;timezone:string;teacher:string|null;room:string|null;description:string|null;event_type:string;content_hash:string;sequence:number;status:string;active:number;created_at:string;updated_at:string;deleted_at:string|null};
 const esc=(s:string)=>s.replace(/\\/g,"\\\\").replace(/\r\n|\r|\n/g,"\\n").replace(/,/g,"\\,").replace(/;/g,"\\;");
@@ -14,11 +15,12 @@ const tzlines=["BEGIN:VTIMEZONE","TZID:Australia/Sydney","BEGIN:STANDARD","TZOFF
 export async function calendarFeed(db:D1Database,pepper:Uint8Array,raw:string,request:Request):Promise<Response>{
   if(!/^sl_cal_[A-Za-z0-9_-]+$/.test(raw)||raw.length>100)return new Response(null,{status:404});
   const hash=await hashToken(pepper,"calendar",raw);
-  const stamp=nowIso();
+  const stamp=nowIso(),client=classifyClient(request.headers.get("User-Agent"));
   const batch=await db.batch([
     db.prepare("SELECT c.*,u.account_status,u.feed_enabled,t.status AS token_status FROM calendar_tokens t JOIN calendars c ON c.id=t.calendar_id JOIN users u ON u.id=c.owner_user_id WHERE t.token_hash=? AND t.status='active'").bind(hash),
     db.prepare("UPDATE calendar_tokens SET last_used_at=? WHERE token_hash=? AND status='active' AND EXISTS(SELECT 1 FROM calendars c JOIN users u ON u.id=c.owner_user_id WHERE c.id=calendar_tokens.calendar_id AND u.account_status='active' AND u.feed_enabled=1)").bind(stamp,hash),
-    db.prepare("SELECT e.* FROM events e JOIN calendar_tokens t ON t.calendar_id=e.calendar_id JOIN calendars c ON c.id=e.calendar_id JOIN users u ON u.id=c.owner_user_id WHERE t.token_hash=? AND t.status='active' AND u.account_status='active' AND u.feed_enabled=1 AND (e.active=1 OR e.status='cancelled') ORDER BY e.starts_at_utc,e.ical_uid").bind(hash)
+    db.prepare("SELECT e.* FROM events e JOIN calendar_tokens t ON t.calendar_id=e.calendar_id JOIN calendars c ON c.id=e.calendar_id JOIN users u ON u.id=c.owner_user_id WHERE t.token_hash=? AND t.status='active' AND u.account_status='active' AND u.feed_enabled=1 AND (e.active=1 OR e.status='cancelled') ORDER BY e.starts_at_utc,e.ical_uid").bind(hash),
+    db.prepare("INSERT INTO calendar_subscription_clients(token_id,client,first_seen_at,last_seen_at,fetch_count) SELECT t.id,?,?,?,1 FROM calendar_tokens t JOIN calendars c ON c.id=t.calendar_id JOIN users u ON u.id=c.owner_user_id WHERE t.token_hash=? AND t.status='active' AND u.account_status='active' AND u.feed_enabled=1 ON CONFLICT(token_id,client) DO UPDATE SET last_seen_at=excluded.last_seen_at,fetch_count=calendar_subscription_clients.fetch_count+1").bind(client,stamp,stamp,hash)
   ]);
   const f=batch[0].results[0] as Feed|undefined;
   if(!f)return new Response(null,{status:404});

@@ -6,6 +6,7 @@ import { handleRequest } from "../src/index";
 import { SCRYPT_LEGACY, PASSWORD } from "./password-fixtures";
 import { sessionHash } from "../src/auth";
 import schema from "../migrations/0001_schema.sql?raw";
+import subscriptionSchema from "../migrations/0002_subscription_clients.sql?raw";
 
 const pepper=new Uint8Array(32).fill(120),uidSecret=new Uint8Array(32).fill(121);
 const rawCalendar="sl_cal_fixture_please_do_not_use_as_secret",rawDevice="sl_dvc_fixture";
@@ -22,7 +23,7 @@ const key=(n:number)=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
 async function responseJson(r:Response){return await r.json() as {revision:number;changed:boolean;replayed?:boolean;syncId:string;result:{inserted:number;updated:number;removed:number;restored:number;unchanged:number};error?:{code:string};events?:{active:number}};}
 
 beforeAll(async()=>{
-  const statements=schema.replace(/^\s*--.*$/gm,"").split(";").map(s=>s.trim()).filter(Boolean);
+  const statements=(schema+"\n"+subscriptionSchema).replace(/^\s*--.*$/gm,"").split(";").map(s=>s.trim()).filter(Boolean);
   await db.batch(statements.map(s=>db.prepare(s)));
   await db.batch([
     db.prepare("INSERT INTO users(id,display_name,role,created_at,updated_at) VALUES (?,?,?,?,?)").bind("u1","Fixture","owner",stamp,stamp),
@@ -103,9 +104,18 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  expect((await postForm("/app/calendar/create",{},ownerCookie)).status).toBe(303);
  expect(await (await call("/app/calendar",{headers:{Cookie:ownerCookie}})).text()).toContain(managedPath!);
  expect((await db.prepare("SELECT count(*) AS n FROM calendar_tokens WHERE calendar_id='c1' AND status='active' AND id LIKE 'ui-v1-%'").first<{n:number}>())?.n).toBe(1);
- const subscribed=await call(managedPath!);expect(subscribed.status).toBe(200);const ics=await subscribed.text();expect(ics).toContain("REFRESH-INTERVAL;VALUE=DURATION:PT15M");expect(ics).toContain("BEGIN:VEVENT");
- expect((await call(managedPath!,{headers:{"If-None-Match":subscribed.headers.get("ETag")!}})).status).toBe(304);
+ const subscribed=await call(managedPath!,{headers:{"User-Agent":"CalendarAgent/1.0"}});expect(subscribed.status).toBe(200);const ics=await subscribed.text();expect(ics).toContain("REFRESH-INTERVAL;VALUE=DURATION:PT15M");expect(ics).toContain("BEGIN:VEVENT");
+ expect((await call(managedPath!,{headers:{"If-None-Match":subscribed.headers.get("ETag")!,"User-Agent":"CalendarAgent/1.0"}})).status).toBe(304);
  expect((await call(feedPath)).status).toBe(200);
+ const observed=await db.prepare("SELECT client,fetch_count FROM calendar_subscription_clients WHERE token_id IN (SELECT id FROM calendar_tokens WHERE calendar_id='c1' AND id LIKE 'ui-v1-%')").all<{client:string;fetch_count:number}>();
+ expect(observed.results).toEqual([{client:"apple",fetch_count:2}]);
+ expect((await postForm("/app/calendar/create",{label:"MacBook"},ownerCookie)).status).toBe(303);
+ const listPage=await (await call("/app/calendar",{headers:{Cookie:ownerCookie}})).text();expect(listPage).toContain("MacBook");expect(listPage).toContain("Apple Calendar");expect(listPage).toContain("data-slot=\"input-group\"");
+ const named=await db.prepare("SELECT t.id FROM calendar_tokens t JOIN calendar_subscription_meta m ON m.token_id=t.id WHERE m.label='MacBook'").first<{id:string}>();expect(named).toBeTruthy();
+ expect((await postForm("/app/calendar/subscriptions/"+named!.id+"/rename",{label:"MacBook Pro"},ownerCookie)).status).toBe(303);
+ expect((await postForm("/app/calendar/subscriptions/"+named!.id+"/revoke",{},ownerCookie)).status).toBe(400);
+ expect((await postForm("/app/calendar/subscriptions/"+named!.id+"/revoke",{confirm:"revoke"},ownerCookie)).status).toBe(303);
+ expect((await call(managedPath!)).status).toBe(200);
  expect((await call("/api/v2/me/pairing-codes",{method:"POST",headers:{Cookie:ownerCookie}})).status).toBe(403);
  const codeResponse=await call("/api/v2/me/pairing-codes",{method:"POST",headers:{Cookie:ownerCookie,Origin:baseUrl}});expect(codeResponse.status).toBe(200);
  const {code}=await codeResponse.json() as {code:string};
@@ -130,6 +140,7 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  expect((await call("/admin/timetables/c2",{headers:{Cookie:ownerCookie}})).status).toBe(200);
  expect((await call("/admin/timetables/unknown",{headers:{Cookie:ownerCookie}})).status).toBe(404);
  const regularCalendar=await call("/app/calendar",{headers:{Cookie:regularCookie}});expect(await regularCalendar.text()).not.toContain(managedPath!);
+ expect((await postForm("/app/calendar/subscriptions/"+named!.id+"/rename",{label:"Not mine"},regularCookie)).status).toBe(404);
  const d=await db.prepare("SELECT id FROM devices WHERE token_hash=?").bind(await hashToken(pepper,"device",deviceToken)).first<{id:string}>();
  expect((await call("/api/v2/me/devices/"+d!.id,{method:"DELETE",headers:{Cookie:regularCookie,Origin:baseUrl}})).status).toBe(404);
  const invite=await postForm("/admin/invitations",{expected_name:"Invited fixture",max_devices:"2"},ownerCookie);expect(invite.status).toBe(200);

@@ -107,3 +107,5 @@
  [data-slot=card]{transition:border-color 160ms ease,background-color 160ms ease}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+@layer components{.subnav{@apply gap-1}.subnav>a{@apply border-transparent px-2.5 py-1.5 text-xs hover:border-border}.panel-head{@apply gap-2}.panel-head h2{@apply text-sm}}
