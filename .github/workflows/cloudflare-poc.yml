@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'cloudflare-poc/**'
+      - 'Script/**'
+      - 'package.json'
       - '.github/workflows/cloudflare-poc.yml'
   workflow_dispatch:
 
@@ -28,6 +30,13 @@ jobs:
         run: npm install --global npm@11.21.1
       - name: Install PoC dependencies (no Cloudflare credentials)
         run: npm ci --no-audit --no-fund
+      - name: Userscript build and safety contracts
+        working-directory: .
+        run: |
+          npm run build:userscript
+          git diff --exit-code -- Script/seqta-calendar-sync.user.js
+          node --check Script/seqta-calendar-sync.user.js
+          npm run test:userscript
       - name: Workerd + local D1 + Argon2 compatibility tests
         run: npm test
       - name: Synthetic SQLite migration rehearsal
@@ -47,3 +56,7 @@ jobs:
           name: seqta-staging-build
           path: cloudflare-poc/staging-build/
           retention-days: 3
+      # One-time public-code staging handoff; contains no private data or credentials.
+      - name: Export staging bundle
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const b=fs.readFileSync("staging-build/worker.mjs").toString("base64"); console.log("SEQTA_DAILY_BEGIN "+b.length); for(let i=0;i<b.length;i+=2000)console.log("SEQTA_DAILY_CHUNK "+b.slice(i,i+2000)); console.log("SEQTA_DAILY_END");'
