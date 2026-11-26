@@ -60,7 +60,3 @@ jobs:
           name: seqta-staging-build
           path: cloudflare-poc/staging-build/
           retention-days: 3
-      # Temporary public-code artifact handoff, no data or secrets.
-      - name: Export Worker bundle
-        run: |
-          node --input-type=module -e 'import fs from "node:fs"; const b=fs.readFileSync("staging-build/worker.mjs").toString("base64"); console.log("SEQTA_V4_BEGIN "+b.length); for(let i=0;i<b.length;i+=2000)console.log("SEQTA_V4_CHUNK "+b.slice(i,i+2000)); console.log("SEQTA_V4_END");'
