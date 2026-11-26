@@ -7,6 +7,7 @@ import { SCRYPT_LEGACY, PASSWORD } from "./password-fixtures";
 import { sessionHash } from "../src/auth";
 import schema from "../migrations/0001_schema.sql?raw";
 import subscriptionSchema from "../migrations/0002_subscription_clients.sql?raw";
+import dailySchema from "../migrations/0003_daily_experience.sql?raw";
 
 const pepper=new Uint8Array(32).fill(120),uidSecret=new Uint8Array(32).fill(121);
 const rawCalendar="sl_cal_fixture_please_do_not_use_as_secret",rawDevice="sl_dvc_fixture";
@@ -23,7 +24,7 @@ const key=(n:number)=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
 async function responseJson(r:Response){return await r.json() as {revision:number;changed:boolean;replayed?:boolean;syncId:string;result:{inserted:number;updated:number;removed:number;restored:number;unchanged:number};error?:{code:string};events?:{active:number}};}
 
 beforeAll(async()=>{
-  const statements=(schema+"\n"+subscriptionSchema).replace(/^\s*--.*$/gm,"").split(";").map(s=>s.trim()).filter(Boolean);
+  const statements=(schema+"\n"+subscriptionSchema+"\n"+dailySchema).replace(/^\s*--.*$/gm,"").split(";").map(s=>s.trim()).filter(Boolean);
   await db.batch(statements.map(s=>db.prepare(s)));
   await db.batch([
     db.prepare("INSERT INTO users(id,display_name,role,created_at,updated_at) VALUES (?,?,?,?,?)").bind("u1","Fixture","owner",stamp,stamp),
@@ -71,6 +72,11 @@ test("integrated D1 sync, stable UID, replay, partial/empty protection, ICS and 
   r=await send(key(6),makeBody([lesson(1,"Updated Music"),lesson(2,"Business")],true));expect(r.status).toBe(200);result=await responseJson(r);
   expect(result.result.restored).toBe(1);expect(result.revision).toBe(8);
   expect((await db.prepare("SELECT ical_uid FROM events WHERE calendar_id=? AND course_code=?").bind("c1","SUB1").first<{ical_uid:string}>())?.ical_uid).toBe(firstUid);
+  const marked={...makeBody([lesson(1,"Updated Music"),lesson(2,"Business")],true),schoolDays:[{date:"2026-11-24",week:"B",term:"Term 4"}]};
+  expect((await send(key(20),marked)).status).toBe(200);
+  const day=await db.prepare("SELECT week_label,term_label FROM worker_school_days WHERE calendar_id='c1' AND local_date='2026-11-24'").first();expect(day).toEqual({week_label:"B",term_label:"Term 4"});
+  expect((await call("/api/v2/device/check",{method:"POST",headers:{...auth,"Content-Type":"application/json"},body:JSON.stringify({outcome:"unchanged",reason:"ok"})})).status).toBe(200);
+  expect((await db.prepare("SELECT outcome FROM worker_device_checks WHERE device_id='d1'").first<{outcome:string}>())?.outcome).toBe("unchanged");
   await db.prepare("UPDATE users SET feed_enabled=0 WHERE id=?").bind("u1").run();
   expect((await call(feedPath)).status).toBe(410);
   await db.prepare("UPDATE users SET feed_enabled=1 WHERE id=?").bind("u1").run();
@@ -91,6 +97,12 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  const timetable=await call("/app/timetable?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}});expect(timetable.status).toBe(200);
  const schedule=await timetable.text();expect(schedule).toContain("Previous week or day");expect(schedule).toContain("Next week or day");expect(schedule).toContain("Time-grid timetable");expect(schedule).toContain("data-start");expect(schedule).toContain("Australia/Sydney");
  expect((await call("/app/timetable?from=invalid",{headers:{Cookie:ownerCookie}})).status).toBe(400);
+ expect(schedule).toContain("Live school day");expect(schedule).toContain("lesson-sheet");expect(schedule).toContain("Week B");expect(schedule).toContain("Weekly class time");
+ expect((await postForm("/app/account",{action:"display",view:"day",hour:"12",locate:"on",terms:"Term 4 | 2026-11-23 | 2026-12-10 | A"},ownerCookie)).status).toBe(303);
+ expect((await postForm("/app/account",{action:"course",course:"code:SUB1",name:"My Music",color:"2"},ownerCookie)).status).toBe(303);
+ const personalized=await (await call("/app/timetable?from=2026-11-24&until=2026-11-24",{headers:{Cookie:ownerCookie}})).text();expect(personalized).toContain("My Music");expect(personalized).toContain("9:00 AM");
+ expect((await call("/admin/health",{headers:{Cookie:ownerCookie}})).status).toBe(200);
+
  for(const path of ["/app/calendar","/app/devices","/app/sync-history","/app/account","/admin/dashboard","/admin/users","/admin/invitations","/admin/audit"]){expect((await call(path,{headers:{Cookie:ownerCookie}})).status).toBe(200);}
 
  expect(overviewHtml).toContain("data-theme-toggle");expect(overviewHtml).toContain("/assets/ui.js");
@@ -132,6 +144,7 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  ]);
 
  expect((await call("/admin/users",{headers:{Cookie:regularCookie}})).status).toBe(403);
+ expect((await call("/admin/health",{headers:{Cookie:regularCookie}})).status).toBe(403);
  expect((await call("/admin/timetables",{headers:{Cookie:regularCookie}})).status).toBe(403);
  expect((await call("/admin/timetables/c1",{headers:{Cookie:regularCookie}})).status).toBe(403);
  const all=await call("/admin/timetables",{headers:{Cookie:ownerCookie}});expect(all.status).toBe(200);const allHtml=await all.text();expect(allHtml).toContain("/admin/timetables/c1");expect(allHtml).toContain("/admin/timetables/c2");expect(allHtml).not.toContain(managedPath!);

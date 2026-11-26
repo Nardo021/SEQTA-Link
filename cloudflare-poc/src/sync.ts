@@ -1,6 +1,7 @@
 import { ApiError, localToUtc, nowIso, pyJson, sha256 } from "./common";
 import { hashToken, stableUid } from "./compat";
 import type { StoredEvent } from "./ics";
+import { shiftDate } from "./schedule";
 type Device={id:string;owner_user_id:string;calendar_id:string;name:string;feed_name:string;timezone:string;revision:number;last_synced_at:string|null;updated_at:string};
 type Range={from:string;until:string;complete:boolean};
 type Lesson={source_key:string;natural_key:string;local_date:string;period_key:string;course_code:string|null;title:string;starts_at_utc:string;ends_at_utc:string;teacher:string|null;room:string|null;description:string|null;event_type:string;content_hash:string};
@@ -24,8 +25,8 @@ export async function getDevice(db:D1Database,pepper:Uint8Array,request:Request)
 }
 export async function deviceStatus(db:D1Database,pepper:Uint8Array,request:Request){
   const {device:d}=await getDevice(db,pepper,request);
-  const [count,run]=await db.batch([db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id=? AND active=1 AND status='confirmed'").bind(d.calendar_id),db.prepare("SELECT status FROM sync_runs WHERE calendar_id=? ORDER BY started_at DESC LIMIT 1").bind(d.calendar_id)]);
-  return {feed:{name:d.feed_name,timezone:d.timezone,revision:d.revision},sync:{enabled:true,lastSyncedAt:d.last_synced_at,lastStatus:(run.results[0] as {status:string}|undefined)?.status||"unknown"},events:{active:(count.results[0] as {n:number}|undefined)?.n||0},device:{name:d.name,lastSeenAt:nowIso()}};
+  const [count,run,bound,check]=await db.batch([db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id=? AND active=1 AND status='confirmed'").bind(d.calendar_id),db.prepare("SELECT status FROM sync_runs WHERE calendar_id=? ORDER BY started_at DESC LIMIT 1").bind(d.calendar_id),db.prepare("SELECT 1 AS n FROM source_identities WHERE calendar_id=?").bind(d.calendar_id),db.prepare("SELECT outcome,reason,checked_at FROM worker_device_checks WHERE device_id=?").bind(d.id)]);
+  return {feed:{name:d.feed_name,timezone:d.timezone,revision:d.revision},sync:{enabled:true,sourceBound:bound.results.length===1,check:check.results[0]||null,lastSyncedAt:d.last_synced_at,lastStatus:(run.results[0] as {status:string}|undefined)?.status||"unknown"},events:{active:(count.results[0] as {n:number}|undefined)?.n||0},device:{name:d.name,lastSeenAt:nowIso()}};
 }
 async function normalize(body:Record<string,unknown>,d:Device){
   if(body.schemaVersion!==1||body.timezone!==d.timezone||d.timezone!=="Australia/Sydney")return fail("INVALID_TIMEZONE","Unsupported schema or timezone.");
@@ -49,9 +50,26 @@ async function normalize(body:Record<string,unknown>,d:Device){
     const previous=byNatural.get(natural_key);if(previous){if(previous.content_hash!==content_hash)return fail("DUPLICATE_LESSON_CONFLICT","Conflicting lessons in the same slot.",409);duplicates++;continue;}byNatural.set(natural_key,lesson);
   }
   const lessons=[...byNatural.values()];
+  // Only new source-aware clients can establish authoritative day coverage.
+  const schoolDays=new Map<string,{local_date:string;week_label:string|null;term_label:string|null;holiday_label:string|null}>();
+  if(body.schoolDays!==undefined){
+   if(!Array.isArray(body.schoolDays)||body.schoolDays.length>366)return fail("INVALID_REQUEST","Invalid school calendar metadata.");
+   for(const r of ranges.filter(r=>r.complete))for(let day=r.from;day<=r.until;day=shiftDate(day,1)){
+    schoolDays.set(day,{local_date:day,week_label:null,term_label:null,holiday_label:null});
+    if(schoolDays.size>366)return fail("INVALID_DATE_RANGE","School coverage exceeds 366 days.");
+   }
+   for(const value of body.schoolDays){const item=obj(value),day=date(item.date),entry=schoolDays.get(day);
+    if(!entry)return fail("INVALID_DATE_RANGE","School metadata requires complete coverage.");
+    if(item.week!==undefined&&item.week!==null&&item.week!=="A"&&item.week!=="B")return fail("INVALID_REQUEST","Invalid week label.");
+    const week=item.week as "A"|"B"|null|undefined,term=optional(item.term,80),holiday=optional(item.holiday,80);
+    if(week&&entry.week_label&&entry.week_label!==week)return fail("INVALID_REQUEST","Conflicting week labels.");
+    entry.week_label=week||entry.week_label;entry.term_label=term||entry.term_label;entry.holiday_label=holiday||entry.holiday_label;
+   }
+  }
+
   const payloadHash=await sha256(pyJson(body));
   const snapshotHash=await sha256(pyJson({coverage:ranges,lessons:lessons.map(l=>({sourceKey:l.source_key,naturalKey:l.natural_key,contentHash:l.content_hash}))}));
-  return {school,student,ranges,lessons,payloadHash,snapshotHash,duplicates,received:body.lessons.length};
+  return {school,student,ranges,lessons,schoolDays:[...schoolDays.values()],payloadHash,snapshotHash,duplicates,received:body.lessons.length};
 }
 // JSON rows are bound as data; columns and SQL fragments below are fixed application constants.
 function chunks<T>(rows:T[]):string[]{const result:string[]=[];let batch:T[]=[],size=0;for(const row of rows){const n=JSON.stringify(row).length;if(batch.length&&(size+n>48000||batch.length>=80)){result.push(JSON.stringify(batch));batch=[];size=0;}batch.push(row);size+=n;}if(batch.length)result.push(JSON.stringify(batch));return result;}
@@ -99,6 +117,7 @@ export async function syncCalendar(db:D1Database,pepper:Uint8Array,uidSecret:Uin
   ];
   for(const data of chunks(writes))statements.push(db.prepare("INSERT INTO events("+cols.join(",")+") SELECT "+cols.map(c=>"json_extract(value,'$."+c+"')").join(",")+" FROM json_each(?) WHERE 1 ON CONFLICT(id) DO UPDATE SET "+mutable.map(c=>c+"=excluded."+c).join(",")).bind(data));
   for(const data of chunks(aliasWrites))statements.push(db.prepare("INSERT INTO event_aliases(calendar_id,source_key,event_id,first_seen_at,last_seen_at) SELECT ?,json_extract(value,'$.source_key'),json_extract(value,'$.event_id'),?,? FROM json_each(?) WHERE 1 ON CONFLICT(calendar_id,source_key) DO UPDATE SET event_id=excluded.event_id,last_seen_at=excluded.last_seen_at").bind(cid,stamp,stamp,data));
+  for(const data of chunks(n.schoolDays))statements.push(db.prepare("INSERT INTO worker_school_days(calendar_id,local_date,week_label,term_label,holiday_label,checked_at) SELECT ?,json_extract(value,'$.local_date'),json_extract(value,'$.week_label'),json_extract(value,'$.term_label'),json_extract(value,'$.holiday_label'),? FROM json_each(?) WHERE 1 ON CONFLICT(calendar_id,local_date) DO UPDATE SET week_label=excluded.week_label,term_label=excluded.term_label,holiday_label=excluded.holiday_label,checked_at=excluded.checked_at").bind(cid,stamp,data));
   const rangeFrom=n.ranges.map(r=>r.from).sort()[0],rangeUntil=n.ranges.map(r=>r.until).sort().at(-1)!;
   statements.push(
     db.prepare("UPDATE calendars SET revision=?,last_synced_at=?,updated_at=?,last_changed_at=CASE WHEN ?=1 THEN ? ELSE last_changed_at END WHERE id=?").bind(revision,stamp,stamp,changed?1:0,stamp,cid),
@@ -108,4 +127,13 @@ export async function syncCalendar(db:D1Database,pepper:Uint8Array,uidSecret:Uin
   );
   try{await db.batch(statements);}catch(e){if(String(e).includes("CHECK constraint failed")||String(e).includes("UNIQUE constraint failed"))return fail("SYNC_ALREADY_RUNNING","Concurrent update or conflicting snapshot; retry.",409);throw e;}
   return {syncId:id,revision,changed,result:counts,lastSyncedAt:stamp};
+}
+
+export async function reportDeviceCheck(db:D1Database,pepper:Uint8Array,request:Request,value:unknown){
+ const {device:d,hash}=await getDevice(db,pepper,request),v=obj(value);
+ const outcomes=["uploaded","unchanged","skipped","failed"],reasons=["ok","partial","empty","identity","unbound","network","backend","busy"];
+ if(typeof v.outcome!=="string"||typeof v.reason!=="string"||!outcomes.includes(v.outcome)||!reasons.includes(v.reason))return fail("INVALID_REQUEST","Invalid device check.");
+ const stamp=nowIso();
+ await db.prepare("INSERT INTO worker_device_checks(device_id,outcome,reason,checked_at) SELECT d.id,?,?,? FROM devices d JOIN users u ON u.id=d.owner_user_id WHERE d.id=? AND d.token_hash=? AND d.status='active' AND u.account_status='active' AND u.sync_enabled=1 ON CONFLICT(device_id) DO UPDATE SET outcome=excluded.outcome,reason=excluded.reason,checked_at=excluded.checked_at WHERE julianday(excluded.checked_at)-julianday(worker_device_checks.checked_at)>=1.0/1440 OR worker_device_checks.outcome<>excluded.outcome OR worker_device_checks.reason<>excluded.reason").bind(v.outcome,v.reason,stamp,d.id,hash).run();
+ return {status:"ok"};
 }

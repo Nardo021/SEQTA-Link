@@ -11,7 +11,7 @@ export const weekday=(v:string)=>new Date(v+"T00:00:00Z").toLocaleDateString("en
 export function minuteOfDay(v:unknown){const d=utcDate(String(v));if(!Number.isFinite(d.getTime()))return NaN;const p=sydneyParts(d);return Number(p.hour)*60+Number(p.minute)+Number(p.second)/60;}
 export function minuteLabel(min:number){return String(Math.floor(min/60)).padStart(2,"0")+":"+String(Math.floor(min%60)).padStart(2,"0");}
 export const timeLabel=(v:unknown)=>{const min=minuteOfDay(v);return Number.isFinite(min)?minuteLabel(min):"—";};
-export function courseColor(r:LessonRow){let hash=2166136261;for(const ch of String(r.course_code||r.title||"")){hash=Math.imul(hash^ch.charCodeAt(0),16777619);}return (hash>>>0)%6;}
+export function courseColor(r:LessonRow){if(typeof r.ui_color==="number"&&Number.isInteger(r.ui_color)&&r.ui_color>=0&&r.ui_color<=5)return r.ui_color;let hash=2166136261;for(const ch of String(r.course_code||r.title||"")){hash=Math.imul(hash^ch.charCodeAt(0),16777619);}return (hash>>>0)%6;}
 export type Slot={row:LessonRow;start:number;end:number;lane:number;lanes:number};
 export function placeLessons(rows:LessonRow[]):Slot[]{
  const ordered=rows.map(row=>({row,start:minuteOfDay(row.starts_at_utc),end:minuteOfDay(row.ends_at_utc),lane:0,lanes:1})).filter(x=>Number.isFinite(x.start)&&Number.isFinite(x.end)&&x.end>x.start).sort((a,b)=>a.start-b.start||a.end-b.end);
