@@ -42,16 +42,6 @@
  .toolbar form label{@apply min-w-28 flex-1}
  .notice{@apply rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900}
  .secret-box{@apply rounded-lg border bg-muted p-5 text-center font-mono text-2xl tracking-widest select-all}
- .agenda{@apply space-y-3}
- .day{@apply overflow-hidden rounded-xl border}
- .day-head{@apply flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-3}
- .lesson{@apply grid grid-cols-[72px_3px_minmax(0,1fr)_auto] items-center gap-3 border-b px-4 py-3 last:border-0}
- .time{@apply grid gap-0.5 text-xs font-medium tabular-nums}
- .rail{@apply h-full min-h-9 rounded-sm bg-primary}
- .lesson-title{@apply min-w-0 break-words}
- .lesson-title strong{@apply block font-medium}
- .lesson-title small{@apply block}
- .room{@apply rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground}
  .calendar-scroll{@apply overflow-x-auto rounded-lg border bg-background}
  .calendar-grid{display:grid;grid-template-columns:64px repeat(var(--days),minmax(135px,1fr));min-width:calc(64px + var(--days) * 135px)}
  .calendar-grid[data-view=day]{grid-template-columns:64px minmax(0,1fr);min-width:0}
@@ -70,15 +60,14 @@
  .calendar-event[data-short=true] span{display:none}
  .calendar-now{position:absolute;left:0;right:0;height:1px;background:var(--foreground);z-index:5;pointer-events:none}
  .calendar-now:before{content:"";position:absolute;left:-3px;top:-3px;height:7px;width:7px;border-radius:50%;background:var(--foreground)}
- .calendar-event[data-color="0"],.rail.c0,.slot-mark.c0{--event-bg:#f4f7fb;--event-border:#d5e0ee;--event-accent:#5d7ea8;--event-ink:#24384f}
- .calendar-event[data-color="1"],.rail.c1,.slot-mark.c1{--event-bg:#f3f8f5;--event-border:#d2e4da;--event-accent:#5d8f78;--event-ink:#234237}
- .calendar-event[data-color="2"],.rail.c2,.slot-mark.c2{--event-bg:#f6f4fa;--event-border:#ddd6ea;--event-accent:#7d6d9a;--event-ink:#3c3350}
- .calendar-event[data-color="3"],.rail.c3,.slot-mark.c3{--event-bg:#faf7f1;--event-border:#e7dcc4;--event-accent:#9a7d45;--event-ink:#4a3b1d}
- .calendar-event[data-color="4"],.rail.c4,.slot-mark.c4{--event-bg:#faf4f5;--event-border:#ead5d9;--event-accent:#a56b78;--event-ink:#5a333c}
- .calendar-event[data-color="5"],.rail.c5,.slot-mark.c5{--event-bg:#f3f8f8;--event-border:#d0e3e4;--event-accent:#5d8d94;--event-ink:#234348}
- .rail,.slot-mark.c0,.slot-mark.c1,.slot-mark.c2,.slot-mark.c3,.slot-mark.c4,.slot-mark.c5{background:var(--event-accent,var(--primary))}
+ .calendar-event[data-color="0"],.slot-mark.c0{--event-bg:#f4f7fb;--event-border:#d5e0ee;--event-accent:#5d7ea8;--event-ink:#24384f}
+ .calendar-event[data-color="1"],.slot-mark.c1{--event-bg:#f3f8f5;--event-border:#d2e4da;--event-accent:#5d8f78;--event-ink:#234237}
+ .calendar-event[data-color="2"],.slot-mark.c2{--event-bg:#f6f4fa;--event-border:#ddd6ea;--event-accent:#7d6d9a;--event-ink:#3c3350}
+ .calendar-event[data-color="3"],.slot-mark.c3{--event-bg:#faf7f1;--event-border:#e7dcc4;--event-accent:#9a7d45;--event-ink:#4a3b1d}
+ .calendar-event[data-color="4"],.slot-mark.c4{--event-bg:#faf4f5;--event-border:#ead5d9;--event-accent:#a56b78;--event-ink:#5a333c}
+ .calendar-event[data-color="5"],.slot-mark.c5{--event-bg:#f3f8f8;--event-border:#d0e3e4;--event-accent:#5d8d94;--event-ink:#234348}
 }
-@media(max-width:640px){.lesson{grid-template-columns:64px 3px minmax(0,1fr);gap:8px}.lesson .room{grid-column:3;justify-self:start}.calendar-grid{grid-template-columns:52px repeat(var(--days),minmax(140px,1fr));min-width:calc(52px + var(--days) * 140px)}.calendar-grid[data-view=day]{grid-template-columns:52px minmax(0,1fr);min-width:0}.calendar-time-label{right:6px}}
+@media(max-width:640px){.calendar-grid{grid-template-columns:52px repeat(var(--days),minmax(140px,1fr));min-width:calc(52px + var(--days) * 140px)}.calendar-time-label{right:6px}}
 @media print{.no-print{display:none!important}.calendar-scroll{overflow:visible}.calendar-grid{min-width:0;grid-template-columns:48px repeat(var(--days),minmax(0,1fr))}.calendar-event{print-color-adjust:exact}}
 
 .dark{
@@ -102,8 +91,6 @@
 
 @layer components{.subnav{@apply gap-1}.subnav>a{@apply border-transparent px-2.5 py-1.5 text-xs hover:border-border}.panel-head{@apply gap-2}.panel-head h2{@apply text-sm}}
 
-.calendar-free{position:absolute;left:4px;right:4px;border:1px dashed var(--border);border-radius:5px;padding:3px 6px;color:var(--muted-foreground);background:var(--muted);font-size:11px;overflow:hidden;pointer-events:none}
-.calendar-free span{display:block;font-size:10px}
 .calendar-event[data-current=true]{outline:1px solid var(--foreground);outline-offset:1px;z-index:3}
 .lesson-sheet{position:fixed;top:12dvh;left:50%;right:auto;bottom:auto;width:min(92vw,22rem);height:auto;max-height:70dvh;margin:0;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--background);overflow:auto;transform:translateX(-50%)}
 .lesson-sheet::backdrop{background:rgb(0 0 0/.28)}
@@ -118,11 +105,7 @@
 @media print{.calendar-scroll{max-height:none;overflow:visible}.calendar-time-axis,.calendar-grid.calendar-head{position:static}.calendar-scroll{break-inside:avoid}}
 
 html[data-interactive-ready=yes] #lesson-sheet{display:none}
-.day-strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
-.day-strip a{display:grid;justify-items:center;padding:6px 2px;border:1px solid var(--border);border-radius:8px;min-height:44px}
-.day-strip a[aria-current=date]{background:var(--primary);color:var(--primary-foreground);border-color:var(--primary)}
-.day-strip a[aria-current=date] small{color:inherit}
-[data-slot=popover-content],[data-slot=dropdown-menu-content],[data-slot=dialog-content],[data-slot=sheet-content],[data-slot=alert-dialog-content]{z-index:60}
+[data-slot=popover-content],[data-slot=dropdown-menu-content],[data-slot=dialog-content],[data-slot=alert-dialog-content]{z-index:60}
 [data-slot=calendar] .rdp-week{gap:0}
 @media(max-width:767px){
  [data-workspace] main{max-width:100%;overflow-x:clip}

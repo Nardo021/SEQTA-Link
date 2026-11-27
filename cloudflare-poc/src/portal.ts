@@ -14,13 +14,15 @@ function audit(db:D1Database,actor:User,action:string,target:string|null){return
 const scheduleColumns="id,local_date,period_key,course_code,title,starts_at_utc,ends_at_utc,teacher,room,description,event_type";
 const eventsBetween=(db:D1Database,cid:string,from:string,until:string,limit=501)=>db.prepare("SELECT "+scheduleColumns+" FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND local_date BETWEEN ? AND ? ORDER BY local_date,starts_at_utc,title LIMIT "+limit).bind(cid,from,until).all<Record<string,unknown>>();
 async function timetablePage(db:D1Database,url:URL,calendarId:string,user:User,title:string,prefix="",base="/app/timetable"){
- const own=base==="/app/timetable",p=await preferences(db,calendarId),today=todaySydney(),requestedView=url.searchParams.get("view")||(own?p.view:"week");
- const defaultFrom=requestedView==="day"?today:weekStart(today),from=url.searchParams.get("from")||defaultFrom;
+ const own=base==="/app/timetable",p=await preferences(db,calendarId),today=todaySydney(),explicit=url.searchParams.get("view"),requested=explicit||(own?p.view:"week");
+ const defaultFrom=requested==="day"||requested==="agenda"?today:weekStart(today),from=url.searchParams.get("from")||defaultFrom;
  if(!validDate(from))return err("INVALID_DATE_RANGE","Invalid dates.");
- const until=url.searchParams.get("until")||(requestedView==="day"?from:shiftDate(from,requestedView==="biweek"?13:6));
+ let until=url.searchParams.get("until")||(requested==="day"||requested==="agenda"?from:shiftDate(from,requested==="biweek"?13:6));
  if(!validDate(until)||from>until||dayCount(from,until)>120)return err("INVALID_DATE_RANGE","Choose up to 120 days.");
- const span=dayCount(from,until),view:"week"|"day"|"agenda"|"biweek"=requestedView==="biweek"&&span===14?"biweek":requestedView==="agenda"||span>7?"agenda":span===1?"day":"week";
- const list=view==="day"||view==="agenda",mon=weekStart(from),last=shiftDate(mon,6);
+ let view:"week"|"day"=explicit==="day"||explicit==="agenda"?"day":explicit==="week"||explicit==="biweek"?"week":dayCount(from,until)===1?"day":"week";
+ if(view==="day")until=from;else if(dayCount(from,until)>7)until=shiftDate(from,6);
+ if(explicit==="agenda"||explicit==="biweek"){const next=new URL(url);next.searchParams.set("view",view);next.searchParams.set("from",from);next.searchParams.set("until",until);return redirect(next.pathname+next.search);}
+ const span=dayCount(from,until),list=view==="day",mon=weekStart(from),last=shiftDate(mon,6);
  const [r,days,todayRows,cancelledRes,changeRes]=await Promise.all([
   eventsBetween(db,calendarId,from,until),
   db.prepare("SELECT local_date,week_label,term_label,holiday_label,checked_at FROM worker_school_days WHERE calendar_id=? AND local_date BETWEEN ? AND ? ORDER BY local_date").bind(calendarId,from<mon?from:mon,until>last?until:last).all<SchoolDay>(),
@@ -36,8 +38,8 @@ async function timetablePage(db:D1Database,url:URL,calendarId:string,user:User,t
  for(const [id,kind] of latest)if(kind==="updated"||kind==="restored")changed.add(id);
  const calendarDays=Object.fromEntries(Array.from({length:Math.min(span,120)},(_,i)=>shiftDate(from,i)).map(date=>[date,schoolContext(date,p,days.results)]));
  const ctx=schoolContext(from,p,days.results),hour=own?p.hour:"24" as const;
- const showNow=!!(own&&todayRows&&!((view==="day"&&from===today)||(view==="agenda"&&from<=today&&today<=until)));
- const schedule=list?lessonList(display,cancelled,changed,today,hour):view==="biweek"?timeline(display,from,shiftDate(from,6),"week",new Date(),base,hour,{},calendarDays,own&&p.locate)+timeline(display,shiftDate(from,7),until,"week",new Date(),base,hour,{},calendarDays,own&&p.locate):timeline(display,from,until,"week",new Date(),base,hour,{},calendarDays,own&&p.locate);
+ const showNow=!!(own&&todayRows&&!(view==="day"&&from===today));
+ const schedule=list?lessonList(display,cancelled,changed,today,hour):timeline(display,from,until,"week",new Date(),base,hour,{},calendarDays,own&&p.locate);
  return page(title,prefix+timetableControls(from,until,view,today,base,own&&p.view==="week"&&!url.search,{week:ctx.week,holiday:ctx.holiday})+(showNow&&todayRows?nowLine(todayRows.results,p):"")+(r.results.length>500?notice("Showing the first 500 lessons. Choose a shorter date range."):"")+schedule+lessonSheet(),user);
 }
 const section=(id:string,title:string,body:string)=>"<section id=\""+id+"\" class=\"settings-section\"><h2>"+title+"</h2>"+body+"</section>";

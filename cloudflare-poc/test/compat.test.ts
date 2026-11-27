@@ -117,7 +117,9 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  expect((await call("/api/v2/me/search?q=Music")).status).toBe(401);
  const search=await (await call("/api/v2/me/search?q=Music",{headers:{Cookie:ownerCookie}})).json() as {results:{title:string;href:string}[]};expect(search.results.some(x=>x.title==="My Music")).toBe(true);
  const exportResponse=await call("/app/account/export",{headers:{Cookie:ownerCookie}});expect(exportResponse.status).toBe(200);const exported=await exportResponse.text();expect(exported).toContain("Updated Music");expect(exported).not.toContain(rawCalendar);expect(exported).not.toContain("password_hash");
- const twoWeeks=await (await call("/app/timetable?from=2026-11-23&until=2026-12-06&view=biweek",{headers:{Cookie:ownerCookie}})).text();expect(twoWeeks.match(/aria-label="Time-grid timetable"/g)?.length).toBe(2);
+ const legacyWeek=await call("/app/timetable?from=2026-11-23&until=2026-12-06&view=biweek",{headers:{Cookie:ownerCookie}});expect(legacyWeek.status).toBe(303);expect(legacyWeek.headers.get("Location")).toBe("/app/timetable?from=2026-11-23&until=2026-11-29&view=week");
+ const legacyDay=await call("/app/timetable?from=2026-11-24&until=2026-11-30&view=agenda",{headers:{Cookie:ownerCookie}});expect(legacyDay.status).toBe(303);expect(legacyDay.headers.get("Location")).toBe("/app/timetable?from=2026-11-24&until=2026-11-24&view=day");
+ const oneWeek=await (await call("/app/timetable?from=2026-11-23&until=2026-11-29&view=week",{headers:{Cookie:ownerCookie}})).text();expect(oneWeek.match(/aria-label="Time-grid timetable"/g)?.length).toBe(1);
 
  for(const path of ["/app/calendar","/app/devices","/app/sync-history","/app/account","/admin/dashboard","/admin/users","/admin/invitations","/admin/audit"]){expect((await call(path,{headers:{Cookie:ownerCookie}})).status).toBe(200);}
 
