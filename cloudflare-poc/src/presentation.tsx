@@ -122,10 +122,22 @@ function SubscriptionRow({origin,entry,index,enabled}:{origin:string;entry:Subsc
   <div className="mt-2 flex flex-wrap items-center gap-2"><form method="post" action={"/app/calendar/subscriptions/"+encodeURIComponent(entry.id)+"/rename"} className="flex min-w-40 flex-1 items-center gap-2"><Input aria-label="Subscription name" name="label" defaultValue={entry.label} maxLength={80} required/><Button variant="outline" size="sm" type="submit">Rename</Button></form><form method="post" action={"/app/calendar/subscriptions/"+encodeURIComponent(entry.id)+"/revoke"} data-confirm="Revoke this subscription? Its URL will stop working."><input type="hidden" name="confirm" value="revoke"/><Button variant="ghost" size="sm" type="submit" className="text-destructive"><Trash2 className="size-3.5"/>Revoke</Button></form></div>
  </div>;
 }
+export function syncFreshness(check:{outcome?:unknown;reason?:unknown;checked_at?:unknown;succeeded_at?:unknown}|null,lastUpload:string){
+ const outcome=String(check?.outcome||""),reason=String(check?.reason||"");
+ let label="No browser check yet",state="idle";
+ if(outcome==="unchanged"){label="Up to date";state="ok";}
+ else if(outcome==="uploaded"){label="Uploaded";state="ok";}
+ else if(outcome==="skipped"&&(reason==="partial"||reason==="empty")){label="Incomplete source data";state="warn";}
+ else if(outcome==="skipped"){label="Check skipped";state="warn";}
+ else if(outcome==="failed"&&(reason==="network"||reason==="backend"||reason==="rate")){label="Temporarily stale";state="warn";}
+ else if(outcome==="failed"){label="Sync failed";state="bad";}
+ const checked=check?.checked_at?fmt(check.checked_at):"—",good=check?.succeeded_at?fmt(check.succeeded_at):"—";
+ return html(<div className="sync-status" data-sync-state={state}><p className="sync-meta"><strong>{label}</strong><span>Last check {checked}</span></p><p className="text-xs">Last successful check {good}. Last upload {lastUpload}. A calendar app fetching the feed does not refresh school data.</p></div>);
+}
 export function subscriptionPanel(origin:string,entries:SubscriptionLink[],enabled:boolean,lastSync:string){
  const staging=new URL(origin).hostname.endsWith(".workers.dev");
  return html(<div className="space-y-3">
-  <div className="setting-row"><span className="setting-label">Last sync</span><span>{lastSync}</span></div>
+  <div className="setting-row"><span className="setting-label">Last upload</span><span>{lastSync}</span></div>
   {staging&&<Alert className="py-2"><Info className="size-4"/><AlertDescription>Staging requires Access login. External subscriptions work after production cutover.</AlertDescription></Alert>}
   {enabled&&<form method="post" action="/app/calendar/create" className="flex flex-wrap items-center gap-2"><InputGroup className="min-w-0 flex-1 basis-44"><InputGroupAddon><Plus className="size-4"/></InputGroupAddon><InputGroupInput name="label" aria-label="New subscription name" placeholder="Name" maxLength={80} required/></InputGroup><Button size="sm" type="submit">Add link</Button></form>}
   {enabled&&!entries.some(e=>e.raw)&&<form method="post" action="/app/calendar/create"><Button variant="outline" type="submit" size="sm">Create subscription link</Button></form>}

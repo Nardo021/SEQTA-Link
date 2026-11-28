@@ -9,6 +9,7 @@ import schema from "../migrations/0001_schema.sql?raw";
 import subscriptionSchema from "../migrations/0002_subscription_clients.sql?raw";
 import dailySchema from "../migrations/0003_daily_experience.sql?raw";
 import workspaceSchema from "../migrations/0004_workspace_reliability.sql?raw";
+import freshnessSchema from "../migrations/0005_sync_freshness.sql?raw";
 
 const pepper=new Uint8Array(32).fill(120),uidSecret=new Uint8Array(32).fill(121);
 const rawCalendar="sl_cal_fixture_please_do_not_use_as_secret",rawDevice="sl_dvc_fixture";
@@ -25,7 +26,7 @@ const key=(n:number)=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
 async function responseJson(r:Response){return await r.json() as {revision:number;changed:boolean;replayed?:boolean;syncId:string;result:{inserted:number;updated:number;removed:number;restored:number;unchanged:number};error?:{code:string};events?:{active:number}};}
 
 beforeAll(async()=>{
-  const statements=(schema+"\n"+subscriptionSchema+"\n"+dailySchema+"\n"+workspaceSchema).replace(/^\s*--.*$/gm,"").split(";").map(s=>s.trim()).filter(Boolean);
+  const statements=(schema+"\n"+subscriptionSchema+"\n"+dailySchema+"\n"+workspaceSchema+"\n"+freshnessSchema).replace(/^\s*--.*$/gm,"").split(";").map(s=>s.trim()).filter(Boolean);
   await db.batch(statements.map(s=>db.prepare(s)));
   await db.batch([
     db.prepare("INSERT INTO users(id,display_name,role,created_at,updated_at) VALUES (?,?,?,?,?)").bind("u1","Fixture","owner",stamp,stamp),
@@ -87,7 +88,14 @@ test("integrated D1 sync, stable UID, replay, partial/empty protection, ICS and 
   expect((await send(key(20),marked)).status).toBe(200);
   const day=await db.prepare("SELECT week_label,term_label FROM worker_school_days WHERE calendar_id='c1' AND local_date='2026-11-24'").first();expect(day).toEqual({week_label:"B",term_label:"Term 4"});
   expect((await call("/api/v2/device/check",{method:"POST",headers:{...auth,"Content-Type":"application/json"},body:JSON.stringify({outcome:"unchanged",reason:"ok"})})).status).toBe(200);
-  expect((await db.prepare("SELECT outcome FROM worker_device_checks WHERE device_id='d1'").first<{outcome:string}>())?.outcome).toBe("unchanged");
+  const goodCheck=await db.prepare("SELECT outcome,succeeded_at FROM worker_device_checks WHERE device_id='d1'").first<{outcome:string;succeeded_at:string}>();
+  expect(goodCheck?.outcome).toBe("unchanged");expect(goodCheck?.succeeded_at).toBeTruthy();
+  expect((await call("/api/v2/device/check",{method:"POST",headers:{...auth,"Content-Type":"application/json"},body:JSON.stringify({outcome:"failed",reason:"network"})})).status).toBe(200);
+  const failedCheck=await db.prepare("SELECT outcome,reason,succeeded_at FROM worker_device_checks WHERE device_id='d1'").first<{outcome:string;reason:string;succeeded_at:string}>();
+  expect(failedCheck).toEqual({outcome:"failed",reason:"network",succeeded_at:goodCheck?.succeeded_at});
+  expect((await call("/api/v2/device/check",{method:"POST",headers:{...auth,"Content-Type":"application/json"},body:JSON.stringify({outcome:"failed",reason:"nope"})})).status).toBe(400);
+  const mismatch=await send(key(21),{...makeBody([lesson(1,"Updated Music")],true),studentRef:"other-student"});
+  expect(mismatch.status).toBe(409);expect((await responseJson(mismatch)).error?.code).toBe("SOURCE_IDENTITY_MISMATCH");
   await db.prepare("UPDATE users SET feed_enabled=0 WHERE id=?").bind("u1").run();
   expect((await call(feedPath)).status).toBe(410);
   await db.prepare("UPDATE users SET feed_enabled=1 WHERE id=?").bind("u1").run();
@@ -131,7 +139,7 @@ test("portal login, invitation, pairing, access control and logout",async()=>{
  expect((await postForm("/app/calendar/create",{},ownerCookie)).status).toBe(303);
  const calendarHtml=await (await call("/app/calendar",{headers:{Cookie:ownerCookie}})).text();
  const managedPath=calendarHtml.match(/\/calendar\/sl_cal_[0-9a-f]{64}\.ics/)?.[0];expect(managedPath).toBeTruthy();
- expect(calendarHtml).toContain("Copy link");expect(calendarHtml).toContain("webcal://");expect(calendarHtml).toContain("Appearance");expect(calendarHtml).toContain("Calendar & Sync");expect(calendarHtml).toContain("Account & Devices");expect(calendarHtml).toContain("Advanced");
+  expect(calendarHtml).toContain("Copy link");expect(calendarHtml).toContain("webcal://");expect(calendarHtml).toContain("Appearance");expect(calendarHtml).toContain("Calendar & Sync");expect(calendarHtml).toContain("Account & Devices");expect(calendarHtml).toContain("Advanced");expect(calendarHtml).toContain("does not refresh school data");
  expect((await postForm("/app/calendar/create",{},ownerCookie)).status).toBe(303);
  expect(await (await call("/app/calendar",{headers:{Cookie:ownerCookie}})).text()).toContain(managedPath!);
  expect((await db.prepare("SELECT count(*) AS n FROM calendar_tokens WHERE calendar_id='c1' AND status='active' AND id LIKE 'ui-v1-%'").first<{n:number}>())?.n).toBe(1);

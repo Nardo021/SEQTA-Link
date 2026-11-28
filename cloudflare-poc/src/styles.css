@@ -217,6 +217,9 @@
 .settings-form{display:flex;flex-direction:column;gap:4px}
 .settings-panel form{max-width:none}
 .sync-meta{margin:0}
+.sync-status{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.sync-status .sync-meta{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;color:var(--foreground);font-size:14px;font-weight:500}
+.sync-status[data-sync-state=bad] .sync-meta strong{color:var(--danger)}
 .url-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
 .url-line [data-slot=input-group]{flex:1 1 16rem;min-width:0}
 .sub-row{padding:16px 0;border-top:1px solid var(--border)}

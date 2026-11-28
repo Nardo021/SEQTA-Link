@@ -25,7 +25,7 @@ export async function getDevice(db:D1Database,pepper:Uint8Array,request:Request)
 }
 export async function deviceStatus(db:D1Database,pepper:Uint8Array,request:Request){
   const {device:d}=await getDevice(db,pepper,request);
-  const [count,run,bound,check]=await db.batch([db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id=? AND active=1 AND status='confirmed'").bind(d.calendar_id),db.prepare("SELECT status FROM sync_runs WHERE calendar_id=? ORDER BY started_at DESC LIMIT 1").bind(d.calendar_id),db.prepare("SELECT 1 AS n FROM source_identities WHERE calendar_id=?").bind(d.calendar_id),db.prepare("SELECT outcome,reason,checked_at FROM worker_device_checks WHERE device_id=?").bind(d.id)]);
+  const [count,run,bound,check]=await db.batch([db.prepare("SELECT count(*) AS n FROM events WHERE calendar_id=? AND active=1 AND status='confirmed'").bind(d.calendar_id),db.prepare("SELECT status FROM sync_runs WHERE calendar_id=? ORDER BY started_at DESC LIMIT 1").bind(d.calendar_id),db.prepare("SELECT 1 AS n FROM source_identities WHERE calendar_id=?").bind(d.calendar_id),db.prepare("SELECT outcome,reason,checked_at,succeeded_at FROM worker_device_checks WHERE device_id=?").bind(d.id)]);
   return {feed:{name:d.feed_name,timezone:d.timezone,revision:d.revision},sync:{enabled:true,sourceBound:bound.results.length===1,check:check.results[0]||null,lastSyncedAt:d.last_synced_at,lastStatus:(run.results[0] as {status:string}|undefined)?.status||"unknown"},events:{active:(count.results[0] as {n:number}|undefined)?.n||0},device:{name:d.name,lastSeenAt:nowIso()}};
 }
 async function normalize(body:Record<string,unknown>,d:Device){
@@ -138,9 +138,9 @@ export async function syncCalendar(db:D1Database,pepper:Uint8Array,uidSecret:Uin
 
 export async function reportDeviceCheck(db:D1Database,pepper:Uint8Array,request:Request,value:unknown){
  const {device:d,hash}=await getDevice(db,pepper,request),v=obj(value);
- const outcomes=["uploaded","unchanged","skipped","failed"],reasons=["ok","partial","empty","identity","unbound","network","backend","busy"];
+ const outcomes=["uploaded","unchanged","skipped","failed"],reasons=["ok","partial","empty","identity","unbound","network","backend","busy","rate","session","token"];
  if(typeof v.outcome!=="string"||typeof v.reason!=="string"||!outcomes.includes(v.outcome)||!reasons.includes(v.reason))return fail("INVALID_REQUEST","Invalid device check.");
- const stamp=nowIso();
- await db.prepare("INSERT INTO worker_device_checks(device_id,outcome,reason,checked_at) SELECT d.id,?,?,? FROM devices d JOIN users u ON u.id=d.owner_user_id WHERE d.id=? AND d.token_hash=? AND d.status='active' AND u.account_status='active' AND u.sync_enabled=1 ON CONFLICT(device_id) DO UPDATE SET outcome=excluded.outcome,reason=excluded.reason,checked_at=excluded.checked_at WHERE julianday(excluded.checked_at)-julianday(worker_device_checks.checked_at)>=1.0/1440 OR worker_device_checks.outcome<>excluded.outcome OR worker_device_checks.reason<>excluded.reason").bind(v.outcome,v.reason,stamp,d.id,hash).run();
+ const stamp=nowIso(),succeeded=v.outcome==="uploaded"||v.outcome==="unchanged"?stamp:null;
+ await db.prepare("INSERT INTO worker_device_checks(device_id,outcome,reason,checked_at,succeeded_at) SELECT d.id,?,?,?,? FROM devices d JOIN users u ON u.id=d.owner_user_id WHERE d.id=? AND d.token_hash=? AND d.status='active' AND u.account_status='active' AND u.sync_enabled=1 ON CONFLICT(device_id) DO UPDATE SET outcome=excluded.outcome,reason=excluded.reason,checked_at=excluded.checked_at,succeeded_at=CASE WHEN excluded.outcome IN ('uploaded','unchanged') THEN excluded.checked_at ELSE worker_device_checks.succeeded_at END WHERE julianday(excluded.checked_at)-julianday(worker_device_checks.checked_at)>=1.0/1440 OR worker_device_checks.outcome<>excluded.outcome OR worker_device_checks.reason<>excluded.reason").bind(v.outcome,v.reason,stamp,succeeded,d.id,hash).run();
  return {status:"ok"};
 }

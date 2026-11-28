@@ -1,6 +1,6 @@
 # Seqta Link (Tampermonkey)
 
-**Userscript v3.2.0** for [Seqta Link](../README.md) — extracts your SEQTA Learn timetable and uploads it to the backend.
+**Userscript v3.3.0** for [Seqta Link](../README.md) — extracts your SEQTA Learn timetable and uploads it to the backend.
 
 **Path:** Portal pairing code → Device Token (`sl_dvc_…`) → `POST /api/v2/sync` / `GET /api/v2/status`.
 
@@ -32,7 +32,7 @@ Multiple profiles can be stored locally; Sync asks you to confirm the current SE
 
 ## Prerequisites
 
-1. Running Seqta Link **v3.2.0+** with an account (invite or owner bootstrap).
+1. Running Seqta Link **v3.3.0+** with an account (invite or owner bootstrap).
 2. [Tampermonkey](https://www.tampermonkey.net/).
 
 ## Install
@@ -40,6 +40,15 @@ Multiple profiles can be stored locally; Sync asks you to confirm the current SE
 1. Tampermonkey → **Create a new script** (or Install from file).
 2. Paste / select `seqta-calendar-sync.user.js`.
 3. Save.
+
+### Update an installed script
+
+Browser sync changes are not active until this file replaces the copy in Tampermonkey. Deploying the Worker does not update the script.
+
+1. Rebuild with `npm run build:userscript` if you are editing source.
+2. Tampermonkey → Dashboard → SEQTA Link → edit, replace the script with `seqta-calendar-sync.user.js`, and save.
+3. Keep the existing `@namespace`. Paired profiles, custom backend URLs, and device tokens stay in Tampermonkey storage.
+4. Confirm Settings still shows the same backend and profile, then run one manual sync.
 
 ### Match your school URL
 
@@ -134,4 +143,4 @@ python run.py
 
 ## Smart Auto Sync
 
-Opt in under Calendar Settings for each paired profile, school host and backend. First complete one confirmed manual sync. Every 15 minutes, while SEQTA is visible and authenticated, the script checks source identity and timetable coverage; it skips unchanged successful snapshots and unsafe incomplete/empty automatic uploads. A genuine empty week is not deletion-authoritative unless all five weekdays have explicit holiday markers; visible DOM extraction is never complete. Requires browser Web Locks support. Closing the browser stops auto sync. The Worker records the latest authenticated check. Staging Access can prevent machine requests; production cutover is required for ordinary client use.
+Opt in under Calendar Settings for each paired profile, school host and backend. First complete one confirmed manual sync. Every 15 minutes, while the SEQTA tab is visible and authenticated, the script also checks on return to the tab and after the network recovers. Simultaneous triggers collapse into one check. A failed check waits 15 minutes; it does not add another 15 minutes on top. Network and temporary server failures retry up to three times for the same upload, keeping the original idempotency key and payload. Rate limits follow Retry-After, waiting at most 60 seconds inside the check. Identity mismatch, an invalid device token, and an expired SEQTA session stop automatic checks until you save settings, pair again, or run a manual sync. Unchanged snapshots are successful checks, not failures. Incomplete or empty automatic snapshots are not uploaded, so existing lessons stay. Closing the browser stops auto sync. The Worker can record the last attempt separately from the last successful source check. That server change is not live until its migration is applied and the Worker is deployed. Staging Access can prevent machine requests.
