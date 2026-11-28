@@ -43,7 +43,16 @@ async function timetablePage(db:D1Database,url:URL,calendarId:string,user:User,t
  return page(title,prefix+timetableControls(from,until,view,today,base,own&&p.view==="week"&&!url.search,{week:ctx.week,holiday:ctx.holiday})+(showNow&&todayRows?nowLine(todayRows.results,p):"")+(r.results.length>500?notice("Showing the first 500 lessons. Choose a shorter date range."):"")+schedule+lessonSheet(),user);
 }
 const section=(id:string,title:string,body:string)=>"<section id=\""+id+"\" class=\"settings-section\"><h2>"+title+"</h2>"+body+"</section>";
-async function settingsPage(db:D1Database,pepper:Uint8Array,user:User,cal:Calendar,origin:string){
+type SettingsSection="appearance"|"calendar"|"account"|"advanced";
+function settingsNav(current:SettingsSection){
+ const items:[SettingsSection,string][]=[["appearance","Appearance"],["calendar","Calendar & Sync"],["account","Account & Devices"],["advanced","Advanced"]];
+ return "<nav class=\"settings-nav\" aria-label=\"Settings\">"+items.map(([id,label])=>"<a href=\"#"+id+"\" data-settings-link=\""+id+"\""+(id===current?" aria-current=\"page\"":"")+">"+label+"</a>").join("")+"</nav>";
+}
+function adminNav(path:string){
+ const items:[string,string][]=[["/admin/dashboard","Overview"],["/admin/users","Users"],["/admin/timetables","Timetables"],["/admin/health","Health"],["/admin/invitations","Invitations"],["/admin/audit","Audit"]];
+ return "<nav class='subnav' aria-label='Administration'>"+items.map(([href,name])=>{const on=href==="/admin/dashboard"?path==="/admin/dashboard":path===href||path.startsWith(href+"/");return "<a href='"+href+"'"+(on?" aria-current='page'":"")+">"+name+"</a>";}).join("")+"</nav>";
+}
+async function settingsPage(db:D1Database,pepper:Uint8Array,user:User,cal:Calendar,origin:string,open:SettingsSection){
  const [p,courses,links,devices,codes,runs,changes]=await Promise.all([
   preferences(db,cal.id),
   db.prepare("SELECT course_code,min(title) AS title FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' GROUP BY COALESCE(NULLIF(course_code,''),title),course_code ORDER BY title LIMIT 100").bind(cal.id).all<Record<string,unknown>>(),
@@ -56,7 +65,7 @@ async function settingsPage(db:D1Database,pepper:Uint8Array,user:User,cal:Calend
  const fields=["title","local_date","starts_at_utc","ends_at_utc","teacher","room","period_key","course_code","description","event_type"];
  const changeRows=changes.results.map(c=>{const after=JSON.parse(c.after_json) as Record<string,unknown>,before=c.before_json?JSON.parse(c.before_json) as Record<string,unknown>:null;const diff=before?fields.filter(k=>before[k]!==after[k]).map(k=>esc(k.replaceAll("_"," "))+": "+esc(before[k]??"—")+" → "+esc(after[k]??"—")).join("<br>"):"";return [esc(fmt(c.changed_at)),chip(c.kind),esc(after.title),esc(after.local_date),diff||"—"];});
  const devicesBody=post("/app/devices/pairing-codes",button("Generate pairing code"))+table(["Device","Status","Last sync","Action"],devices.results.map(x=>[rowValue(x,"name"),rowValue(x,"status"),esc(fmt(x.last_synced_at)),x.status==="active"?post("/app/devices/"+encodeURIComponent(String(x.id))+"/revoke",button("Revoke")):""]))+(codes.results.length?table(["Pending code expires","Action"],codes.results.map(x=>[esc(fmt(x.expires_at)),post("/app/devices/pairing-codes/"+encodeURIComponent(String(x.id))+"/delete",button("Delete"))])):"");
- const body=section("appearance","Appearance",appearanceForm(p))+section("calendar","Calendar & Sync",subscriptionPanel(origin,links,!!user.feed_enabled,fmt(cal.last_synced_at))+termsForm(p)+"<h3 class=\"settings-sub\">Sync history</h3>"+table(["When","Change","Course","Date","Details"],changeRows)+runTable(runs.results))+section("account","Account & Devices",post("/app/account",hidden("action","preferences")+field("calendar_name","Calendar name",cal.name)+button("Save"))+post("/app/account",hidden("action","password")+field("current_password","Current password","","password")+field("new_password","New password","","password")+button("Change password"))+devicesBody)+section("advanced","Advanced",courseEditor(p,courses.results)+"<div class=\"mt-3 flex flex-wrap gap-2\">"+action("/app/account/export","Download JSON")+(isAdmin(user)?action("/admin/dashboard","Administration"):"")+"</div>");
+ const body="<div class=\"settings-shell\" data-section=\""+open+"\">"+settingsNav(open)+"<div class=\"settings-panel\">"+section("appearance","Appearance",appearanceForm(p))+section("calendar","Calendar & Sync",subscriptionPanel(origin,links,!!user.feed_enabled,fmt(cal.last_synced_at))+"<div class=\"settings-group\">"+termsForm(p)+"</div><details class=\"reveal\"><summary>Sync history</summary>"+table(["When","Change","Course","Date","Details"],changeRows)+runTable(runs.results)+"</details>")+section("account","Account & Devices",post("/app/account",hidden("action","preferences")+field("calendar_name","Calendar name",cal.name)+button("Save"))+"<details class=\"reveal\"><summary>Change password</summary>"+post("/app/account",hidden("action","password")+field("current_password","Current password","","password")+field("new_password","New password","","password")+button("Change password"))+"</details><div class=\"settings-group\"><h3 class=\"settings-sub\">Devices</h3>"+devicesBody+"</div>")+section("advanced","Advanced",courseEditor(p,courses.results)+"<div class=\"setting-links\">"+action("/app/account/export","Download JSON")+(isAdmin(user)?action("/admin/dashboard","Administration"):"")+"</div>")+"</div></div>";
  return page("Settings",body,user);
 }
 export async function portal(request:Request,db:D1Database,pepper:Uint8Array,secret:Uint8Array):Promise<Response>{
@@ -82,7 +91,7 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
  if(!user)return path.startsWith("/api/")?json({error:{code:"UNAUTHORIZED",message:"Sign in required."}},401):redirect(path.startsWith("/admin/")?"/admin/login":"/app/login");
  if(path.startsWith("/admin/")&&!isAdmin(user))return page("Forbidden","",user,403);
  if(path.startsWith("/admin/")){
-  const nav="<nav class='subnav' aria-label='Administration'>"+link("/admin/dashboard","Overview")+link("/admin/users","Users")+link("/admin/timetables","Timetables")+link("/admin/health","Health")+link("/admin/invitations","Invitations")+link("/admin/audit","Audit")+"</nav>";
+  const nav=adminNav(path);
   if(path==="/admin/"&&get)return redirect("/admin/dashboard");
   if(path==="/admin/dashboard"&&get){const r=await db.prepare("SELECT account_status,count(*) AS count FROM users GROUP BY account_status").all<Record<string,unknown>>();return page("Administration",nav+"<div class='grid grid-cols-1 sm:grid-cols-3'>"+metric("Total accounts",r.results.reduce((n,x)=>n+Number(x.count),0),"All account states","account")+metric("Active accounts",Number(r.results.find(x=>x.account_status==="active")?.count||0),"Can sign in","admin")+metric("Suspended accounts",Number(r.results.find(x=>x.account_status==="suspended")?.count||0),"Access restricted","account")+"</div>"+panel(panelHead("Account status","Current account distribution",action("/admin/users","Manage users"))+table(["Status","Accounts"],r.results.map(x=>[chip(String(x.account_status)),rowValue(x,"count")]))),user);}
   if(path==="/admin/health"&&get){
@@ -150,7 +159,7 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
  }
  if((path==="/app/"||path==="/app/dashboard")&&get)return redirect("/app/timetable");
  if(path==="/app/timetable"&&get)return timetablePage(db,url,cal.id,user,"Timetable");
- if(path==="/app/calendar"&&get)return settingsPage(db,pepper,user,cal,url.origin);
+ if(path==="/app/calendar"&&get)return settingsPage(db,pepper,user,cal,url.origin,"calendar");
  if(path==="/app/calendar/create"&&mut){
   const f=await form(request),name=f.get("label");
   if(name===null)await ensureSubscription(db,pepper,user,cal);else await createNamedSubscription(db,pepper,user,cal,name);
@@ -169,15 +178,15 @@ export async function portal(request:Request,db:D1Database,pepper:Uint8Array,sec
   db.prepare("INSERT INTO calendar_tokens(id,calendar_id,token_hash,token_prefix,created_at) VALUES (?,?,?,?,?)").bind(tokenId,cal.id,await hashToken(pepper,"calendar",raw),raw.slice(0,12),stamp),
   db.prepare("DELETE FROM worker_sync_guard WHERE id=?").bind(guard)
  ]);return redirect("/app/calendar");}
- if(path==="/app/devices"&&get)return settingsPage(db,pepper,user,cal,url.origin);
+ if(path==="/app/devices"&&get)return settingsPage(db,pepper,user,cal,url.origin,"account");
  if((path==="/app/devices/pairing-codes"||path==="/api/v2/me/pairing-codes")&&mut){requireOrigin(request);const result=await createPairing(db,pepper,user,cal);return path.startsWith("/api/")?json(result):page("Pairing code",panel("<div class='secret-box'>"+esc(result.code)+"</div><p>Expires in 10 minutes. Do not share this code.</p>"+action("/app/account#account","Back to settings")),user);}
  const revoke=path.match(/^\/app\/devices\/([A-Za-z0-9_-]+)\/revoke$/),apiRevoke=path.match(/^\/api\/v2\/me\/devices\/([A-Za-z0-9_-]+)$/);
  if((mut&&revoke)||(method==="DELETE"&&apiRevoke)){requireOrigin(request);const id=(revoke||apiRevoke)![1];const result=await db.prepare("UPDATE devices SET status='revoked',revoked_at=? WHERE id=? AND owner_user_id=?").bind(stamp,id,user.id).run();if(result.meta.changes!==1)return err("NOT_FOUND","Device not found.",404);return apiRevoke?json({ok:true}):redirect("/app/devices");}
  const codeDel=path.match(/^\/app\/devices\/pairing-codes\/([A-Za-z0-9_-]+)\/delete$/);if(mut&&codeDel){requireOrigin(request);await db.prepare("DELETE FROM pairing_codes WHERE id=? AND owner_user_id=? AND used_at IS NULL").bind(codeDel[1],user.id).run();return redirect("/app/devices");}
- if(path==="/app/sync-history"&&get)return settingsPage(db,pepper,user,cal,url.origin);
+ if(path==="/app/sync-history"&&get)return settingsPage(db,pepper,user,cal,url.origin,"calendar");
  if(path==="/app/account"){
-  if(get)return settingsPage(db,pepper,user,cal,url.origin);
-  if(mut){const f=await form(request);if(f.get("action")==="display"){await savePreferences(db,cal.id,user.id,updatePrefs(await preferences(db,cal.id),f));return redirect(path+"?notice=saved");}if(f.get("action")==="course"){const key=f.get("course")||"";const rows=await db.prepare("SELECT course_code,title FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND (CASE WHEN course_code IS NOT NULL AND course_code<>'' THEN 'code:'||course_code ELSE 'title:'||title END)=? LIMIT 1").bind(cal.id,key).first<Record<string,unknown>>();if(!rows)return err("NOT_FOUND","Course not found.",404);await savePreferences(db,cal.id,user.id,updateCourse(await preferences(db,cal.id),f,courseKey(rows)));return redirect(path+"?notice=saved");}if(f.get("action")==="preferences"){const name=(f.get("calendar_name")||"").trim().slice(0,200);if(!name)return err("INVALID_REQUEST","Calendar name required.");await db.prepare("UPDATE calendars SET name=?,revision=revision+1,last_changed_at=?,updated_at=? WHERE id=? AND name<>?").bind(name,stamp,stamp,cal.id,name).run();return redirect(path);}
+  if(get)return settingsPage(db,pepper,user,cal,url.origin,"appearance");
+  if(mut){const f=await form(request);if(f.get("action")==="display"){await savePreferences(db,cal.id,user.id,updatePrefs(await preferences(db,cal.id),f));return redirect(path+"?notice=saved#"+(f.get("settings_section")==="calendar"?"calendar":"appearance"));}if(f.get("action")==="course"){const key=f.get("course")||"";const rows=await db.prepare("SELECT course_code,title FROM events WHERE calendar_id=? AND active=1 AND status='confirmed' AND (CASE WHEN course_code IS NOT NULL AND course_code<>'' THEN 'code:'||course_code ELSE 'title:'||title END)=? LIMIT 1").bind(cal.id,key).first<Record<string,unknown>>();if(!rows)return err("NOT_FOUND","Course not found.",404);await savePreferences(db,cal.id,user.id,updateCourse(await preferences(db,cal.id),f,courseKey(rows)));return redirect(path+"?notice=saved#advanced");}if(f.get("action")==="preferences"){const name=(f.get("calendar_name")||"").trim().slice(0,200);if(!name)return err("INVALID_REQUEST","Calendar name required.");await db.prepare("UPDATE calendars SET name=?,revision=revision+1,last_changed_at=?,updated_at=? WHERE id=? AND name<>?").bind(name,stamp,stamp,cal.id,name).run();return redirect(path+"#account");}
    if(f.get("action")==="password"){await rateLimit(db,pepper,request,"password",user.id);if(!checkPassword(f.get("current_password")||"",user.password_hash))return err("UNAUTHORIZED","Current password incorrect.",401);const hash=passwordHash(f.get("new_password")||"");await db.batch([db.prepare("UPDATE users SET password_hash=?,updated_at=? WHERE id=? AND password_hash=? AND account_status='active'").bind(hash,stamp,user.id,user.password_hash),db.prepare("DELETE FROM sessions WHERE user_id=?").bind(user.id)]);return redirect("/app/login",clearCookie);}
   }
  }
