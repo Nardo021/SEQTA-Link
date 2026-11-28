@@ -1,6 +1,7 @@
 import { preferences, savePreferences, updatePrefs, updateCourse, courseKey, displayLesson, schoolContext, type SchoolDay } from "./school";
 import { paintCourseColors } from "./schedule";
-import { nowLine, lessonSheet, appearanceForm, termsForm, courseEditor } from "./daily-ui";
+import { prepareLive, nowLine, lessonSheet, appearanceForm, termsForm, courseEditor } from "./daily-ui";
+import { scheduleTrust, shouldLocate } from "./live";
 import { ApiError, nowIso } from "./common";
 import { hashToken } from "./compat";
 import { managedId, managedRaw, managedSubscription, ensureSubscription, subscriptions, createNamedSubscription, renameSubscription, revokeSubscription } from "./subscription";
@@ -24,14 +25,17 @@ async function timetablePage(db:D1Database,url:URL,calendarId:string,user:User,t
  let view:"week"|"day"=explicit==="day"||explicit==="agenda"?"day":explicit==="week"||explicit==="biweek"?"week":dayCount(from,until)===1?"day":"week";
  if(view==="day")until=from;else if(dayCount(from,until)>7)until=shiftDate(from,6);
  if(explicit==="agenda"||explicit==="biweek"){const next=new URL(url);next.searchParams.set("view",view);next.searchParams.set("from",from);next.searchParams.set("until",until);return redirect(next.pathname+next.search);}
- const span=dayCount(from,until),list=view==="day",mon=weekStart(from),last=shiftDate(mon,6);
- const [r,days,todayRows,cancelledRes,changeRes,catalogRes]=await Promise.all([
+ const span=dayCount(from,until),list=view==="day",mon=weekStart(from),last=shiftDate(mon,6),horizon=shiftDate(today,7);
+ const schoolFrom=[from,mon,own?today:from].sort()[0],schoolUntil=[until,last,own?horizon:until].sort().at(-1)||until;
+ const [r,days,todayRows,cancelledRes,changeRes,catalogRes,freshness,calendarSync]=await Promise.all([
   eventsBetween(db,calendarId,from,until),
-  db.prepare("SELECT local_date,week_label,term_label,holiday_label,checked_at FROM worker_school_days WHERE calendar_id=? AND local_date BETWEEN ? AND ? ORDER BY local_date").bind(calendarId,from<mon?from:mon,until>last?until:last).all<SchoolDay>(),
-  own?eventsBetween(db,calendarId,today,shiftDate(today,7),301):Promise.resolve(null),
+  db.prepare("SELECT local_date,week_label,term_label,holiday_label,checked_at FROM worker_school_days WHERE calendar_id=? AND local_date BETWEEN ? AND ? ORDER BY local_date").bind(calendarId,schoolFrom,schoolUntil).all<SchoolDay>(),
+  own?eventsBetween(db,calendarId,today,horizon,301):Promise.resolve(null),
   list?db.prepare("SELECT "+scheduleColumns+" FROM events WHERE calendar_id=? AND status='cancelled' AND local_date BETWEEN ? AND ? ORDER BY local_date,starts_at_utc LIMIT 200").bind(calendarId,from,until).all<Record<string,unknown>>():Promise.resolve({results:[] as Record<string,unknown>[]}),
   list?db.prepare("SELECT event_id,kind FROM worker_event_changes WHERE calendar_id=? ORDER BY changed_at DESC LIMIT 80").bind(calendarId).all<{event_id:string;kind:string}>():Promise.resolve({results:[] as {event_id:string;kind:string}[]}),
-  db.prepare("SELECT course_code,min(title) AS title FROM events WHERE calendar_id=? GROUP BY COALESCE(NULLIF(course_code,''),title),course_code").bind(calendarId).all<Record<string,unknown>>()
+  db.prepare("SELECT course_code,min(title) AS title FROM events WHERE calendar_id=? GROUP BY COALESCE(NULLIF(course_code,''),title),course_code").bind(calendarId).all<Record<string,unknown>>(),
+  own?db.prepare("SELECT c.outcome,c.checked_at FROM devices d LEFT JOIN worker_device_checks c ON c.device_id=d.id WHERE d.owner_user_id=? AND d.status='active' ORDER BY COALESCE(c.checked_at,'') DESC LIMIT 1").bind(user.id).first<{outcome:string|null;checked_at:string|null}>():Promise.resolve(null),
+  own?db.prepare("SELECT last_synced_at FROM calendars WHERE id=?").bind(calendarId).first<{last_synced_at:string|null}>():Promise.resolve(null)
  ]);
  const catalog=own?catalogRes.results.map(x=>displayLesson(p,x)):catalogRes.results;
  const raw=r.results.slice(0,500),display=paintCourseColors(catalog,own?raw.map(x=>displayLesson(p,x)).filter(x=>!x.ui_hidden):raw);
@@ -41,10 +45,12 @@ async function timetablePage(db:D1Database,url:URL,calendarId:string,user:User,t
  const changed=new Set<string>();
  for(const [id,kind] of latest)if(kind==="updated"||kind==="restored")changed.add(id);
  const calendarDays=Object.fromEntries(Array.from({length:Math.min(span,120)},(_,i)=>shiftDate(from,i)).map(date=>[date,schoolContext(date,p,days.results)]));
- const ctx=schoolContext(from,p,days.results),hour=own?p.hour:"24" as const;
- const showNow=!!(own&&todayRows&&!(view==="day"&&from===today));
- const schedule=list?lessonList(display,cancelled,changed,today,hour):timeline(display,from,until,"week",new Date(),base,hour,{},calendarDays,own&&p.locate);
- return page(title,prefix+timetableControls(from,until,view,today,base,own&&p.view==="week"&&!url.search,{week:ctx.week,holiday:ctx.holiday})+(showNow&&todayRows?nowLine(todayRows.results,p):"")+(r.results.length>500?notice("Showing the first 500 lessons. Choose a shorter date range."):"")+schedule+lessonSheet(),user);
+ const ctx=schoolContext(from,p,days.results),todayCtx=schoolContext(today,p,days.results),hour=own?p.hour:"24" as const;
+ const covered=[...new Set(days.results.map(day=>day.local_date))].filter(date=>date>=today&&date<=horizon);
+ const live=own&&todayRows?prepareLive(todayRows.results,p,{covered,holiday:todayCtx.holiday,trust:scheduleTrust(freshness,calendarSync?.last_synced_at||null)}):null;
+ const locate=shouldLocate(own&&p.locate,from,until,today);
+ const schedule=list?lessonList(display,cancelled,changed,today,hour,new Date(),locate,live?.view.focusAt??null,live?.view.focus??""):timeline(display,from,until,"week",new Date(),base,hour,{},calendarDays,locate,live?.view.focusAt??null,live?.view.focus??"");
+ return page(title,prefix+timetableControls(from,until,view,today,base,own&&p.view==="week"&&!url.search,{week:ctx.week,holiday:ctx.holiday})+(live?nowLine(live.view,live.payload):"")+(r.results.length>500?notice("Showing the first 500 lessons. Choose a shorter date range."):"")+schedule+lessonSheet(),user);
 }
 const section=(id:string,title:string,body:string)=>"<section id=\""+id+"\" class=\"settings-section\"><h2>"+title+"</h2>"+body+"</section>";
 type SettingsSection="appearance"|"calendar"|"account"|"advanced";

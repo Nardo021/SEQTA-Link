@@ -1,6 +1,6 @@
 # Seqta Link (Tampermonkey)
 
-**Userscript v3.3.0** for [Seqta Link](../README.md) — extracts your SEQTA Learn timetable and uploads it to the backend.
+**Userscript v3.3.1** for [Seqta Link](../README.md) — extracts your SEQTA Learn timetable and uploads it to the backend.
 
 **Path:** Portal pairing code → Device Token (`sl_dvc_…`) → `POST /api/v2/sync` / `GET /api/v2/status`.
 
@@ -32,7 +32,7 @@ Multiple profiles can be stored locally; Sync asks you to confirm the current SE
 
 ## Prerequisites
 
-1. Running Seqta Link **v3.3.0+** with an account (invite or owner bootstrap).
+1. Running Seqta Link **v3.3.1+** with an account (invite or owner bootstrap). An older 3.3 script still uses the same sync API.
 2. [Tampermonkey](https://www.tampermonkey.net/).
 
 ## Install
@@ -143,4 +143,4 @@ python run.py
 
 ## Smart Auto Sync
 
-Opt in under Calendar Settings for each paired profile, school host and backend. First complete one confirmed manual sync. Every 15 minutes, while the SEQTA tab is visible and authenticated, the script also checks on return to the tab and after the network recovers. Simultaneous triggers collapse into one check. A failed check waits 15 minutes; it does not add another 15 minutes on top. Network and temporary server failures retry up to three times for the same upload, keeping the original idempotency key and payload. Rate limits follow Retry-After, waiting at most 60 seconds inside the check. Identity mismatch, an invalid device token, and an expired SEQTA session stop automatic checks until you save settings, pair again, or run a manual sync. Unchanged snapshots are successful checks, not failures. Incomplete or empty automatic snapshots are not uploaded, so existing lessons stay. Closing the browser stops auto sync. The Worker can record the last attempt separately from the last successful source check. That server change is not live until its migration is applied and the Worker is deployed. Staging Access can prevent machine requests.
+Opt in under Calendar Settings for each paired profile, school host and backend. First complete one confirmed manual sync. Every 15 minutes, while the SEQTA tab is visible and authenticated, the script also checks on return to the tab and after the network recovers. Simultaneous triggers collapse into one check. A failed check waits 15 minutes; it does not add another 15 minutes on top. Network and temporary server failures retry up to three times for the same upload, keeping the original idempotency key and payload. Rate limits follow Retry-After. A delay of 60 seconds or less waits inside the check. A longer delay is not shortened: the next automatic check waits until that time. Identity mismatch, an invalid device token, and an expired SEQTA session stop automatic checks until you save settings, pair again, or run a manual sync. Unchanged snapshots are successful checks, not failures. Incomplete or empty automatic snapshots are not uploaded, so existing lessons stay. Closing the browser stops auto sync. The Worker can record the last attempt separately from the last successful source check. That server change is not live until its migration is applied and the Worker is deployed. Staging Access can prevent machine requests.

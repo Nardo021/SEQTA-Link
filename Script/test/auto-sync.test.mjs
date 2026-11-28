@@ -56,6 +56,13 @@ test("retries transient failures once per upload and stops on identity, token, a
  let busyCalls=0;
  await assert.rejects(()=>c.withTransientRetry(()=>{busyCalls++;const error=new Error("Sync already running in another tab.");throw error;},{attempts:3,sleep:async()=>{}}));
  assert.equal(busyCalls,2);
+ const longWaits=[];
  const rate=new Error("Too many attempts.");rate.status=429;rate.headers="Retry-After: 90";
- await assert.rejects(()=>c.withTransientRetry(()=>{throw rate;},{attempts:3,sleep:async()=>{}}),error=>error.holdMs===90000);
+ await assert.rejects(()=>c.withTransientRetry(()=>{throw rate;},{attempts:3,sleep:async ms=>{longWaits.push(ms);}}),error=>error.holdMs===90000);
+ assert.deepEqual(longWaits,[]);
+ assert.equal(c.deferredWaitMs("rate",120*60000),120*60000);
+ const shortWaits=[];
+ const limited=await c.withTransientRetry(attempt=>{if(attempt===1){const error=new Error("Too many attempts.");error.status=429;error.headers="Retry-After: 45";throw error;}return "later";},{attempts:3,sleep:async ms=>{shortWaits.push(ms);}});
+ assert.equal(limited,"later");
+ assert.deepEqual(shortWaits,[45000]);
 });

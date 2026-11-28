@@ -88,9 +88,14 @@
 .schedule-context{margin:4px 0 0;color:var(--text-secondary);font-size:14px}
 .schedule-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .schedule-toolbar [data-slot=button-group]{margin-left:auto}
-.now-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:0 0 16px;color:var(--text-secondary)}
-.now-line strong{color:var(--foreground);font-size:14px;font-weight:600}
+.now-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;min-width:0;margin:0 0 16px;color:var(--text-secondary)}
+.now-line strong{min-width:0;color:var(--foreground);font-size:14px;font-weight:600}
 .now-line [data-live-state]{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--accent-primary)}
+.now-line[data-stale=true] [data-live-state]{color:var(--text-secondary)}
+.now-line .now-next,.now-line .now-note{flex-basis:100%;min-width:0;font-size:13px;line-height:1.4}
+.now-line .now-next[hidden],.now-progress[hidden]{display:none!important}
+.now-progress{flex-basis:100%;height:2px;overflow:hidden;border-radius:1px;background:var(--border)}
+.now-progress>span{display:block;height:100%;background:var(--accent-primary);transition:width var(--motion-fast) var(--ease-standard)}
 
 .calendar-scroll{max-height:calc(100dvh - 220px);min-height:360px;overflow:auto;overscroll-behavior:contain;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
 .app-main:has([data-layout="week"]){display:flex;flex-direction:column;height:calc(100dvh - 60px);overflow:hidden;padding-bottom:16px}

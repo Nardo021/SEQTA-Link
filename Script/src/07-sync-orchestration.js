@@ -94,8 +94,10 @@
     if(/network|timed out|failed to fetch/i.test(message))return "network";
     return "request";
   }
+  const IN_CHECK_WAIT_MS=60000;
   function retryAfterMs(headers){const match=/retry-after:\s*(\d+)/i.exec(String(headers||""));return match?Number(match[1])*1000:null;}
   function retryWaitMs(kind,attempt,retryAfter){if(kind==="busy")return 2000;if(kind==="rate"&&retryAfter!=null)return retryAfter;return Math.min(15000,1000*4**(attempt-1));}
+  function deferredWaitMs(kind,holdMs){if(kind==="rate"&&Number(holdMs)>0)return Number(holdMs);return AUTO_INTERVAL_MS;}
   async function withTransientRetry(operation,options={}){
     const attempts=options.attempts||3,sleep=options.sleep||(ms=>new Promise(resolve=>setTimeout(resolve,ms)));
     let last;
@@ -104,7 +106,7 @@
       catch(error){
         last=error;const kind=failureKind(error);error.kind=kind;
         const after=retryAfterMs(error.headers||error.responseHeaders);
-        if(kind==="rate"&&after!=null&&after>60000){error.holdMs=after;throw error;}
+        if(kind==="rate"&&after!=null&&after>IN_CHECK_WAIT_MS){error.holdMs=after;throw error;}
         const again=(kind==="network"||kind==="backend"||kind==="rate"||(kind==="busy"&&attempt<2))&&attempt<attempts;
         if(!again)throw error;
         await sleep(retryWaitMs(kind,attempt,after));
@@ -217,7 +219,7 @@
         return outcome;
       }catch(error){
         const kind=failureKind(error);
-        const wait=kind==="rate"&&Number(error.holdMs)>0?Math.min(Number(error.holdMs),60*60000):AUTO_INTERVAL_MS;
+        const wait=deferredWaitMs(kind,error.holdMs);
         setSetting(base+".hold",now+wait);setSetting(base+".reason",kind==="network"||kind==="backend"?kind:"");setSetting(base+".recovered",!!(early&&trigger==="online"));
         const line=freshnessLine(readFresh(config));
         onStatus(line.text,"error");
