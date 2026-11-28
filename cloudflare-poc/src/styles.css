@@ -139,6 +139,26 @@
 .dark .calendar-event[data-color="3"],.dark .slot-mark.c3{--event-bg:color-mix(in srgb,#DCC189 22%,#17181B)}
 .dark .calendar-event[data-color="4"],.dark .slot-mark.c4{--event-bg:color-mix(in srgb,#DFA7AD 22%,#17181B)}
 .dark .calendar-event[data-color="5"],.dark .slot-mark.c5{--event-bg:color-mix(in srgb,#8FA9BC 24%,#17181B)}
+.calendar-event[data-color="6"],.slot-mark.c6{--event-accent:#8ACBEB;--event-bg:color-mix(in srgb,#8ACBEB 30%,#fff);--event-ink:var(--foreground)}
+.calendar-event[data-color="7"],.slot-mark.c7{--event-accent:#B8A67C;--event-bg:color-mix(in srgb,#B8A67C 30%,#fff);--event-ink:var(--foreground)}
+.calendar-event[data-color="8"],.slot-mark.c8{--event-accent:#C5B9E6;--event-bg:color-mix(in srgb,#C5B9E6 30%,#fff);--event-ink:var(--foreground)}
+.calendar-event[data-color="9"],.slot-mark.c9{--event-accent:#CD94B3;--event-bg:color-mix(in srgb,#CD94B3 30%,#fff);--event-ink:var(--foreground)}
+.calendar-event[data-color="10"],.slot-mark.c10{--event-accent:#D59685;--event-bg:color-mix(in srgb,#D59685 30%,#fff);--event-ink:var(--foreground)}
+.calendar-event[data-color="11"],.slot-mark.c11{--event-accent:#B1CC94;--event-bg:color-mix(in srgb,#B1CC94 30%,#fff);--event-ink:var(--foreground)}
+.calendar-event[data-color="12"],.slot-mark.c12{--event-accent:#70C0CB;--event-bg:color-mix(in srgb,#70C0CB 30%,#fff);--event-ink:var(--foreground)}
+.calendar-event[data-color="13"],.slot-mark.c13{--event-accent:#9BCCC6;--event-bg:color-mix(in srgb,#9BCCC6 30%,#fff);--event-ink:var(--foreground)}
+.calendar-event[data-color="14"],.slot-mark.c14{--event-accent:#9DB5DE;--event-bg:color-mix(in srgb,#9DB5DE 30%,#fff);--event-ink:var(--foreground)}
+.calendar-event[data-color="15"],.slot-mark.c15{--event-accent:#DFAB85;--event-bg:color-mix(in srgb,#DFAB85 30%,#fff);--event-ink:var(--foreground)}
+.dark .calendar-event[data-color="6"],.dark .slot-mark.c6{--event-bg:color-mix(in srgb,#8ACBEB 24%,#17181B)}
+.dark .calendar-event[data-color="7"],.dark .slot-mark.c7{--event-bg:color-mix(in srgb,#B8A67C 24%,#17181B)}
+.dark .calendar-event[data-color="8"],.dark .slot-mark.c8{--event-bg:color-mix(in srgb,#C5B9E6 24%,#17181B)}
+.dark .calendar-event[data-color="9"],.dark .slot-mark.c9{--event-bg:color-mix(in srgb,#CD94B3 24%,#17181B)}
+.dark .calendar-event[data-color="10"],.dark .slot-mark.c10{--event-bg:color-mix(in srgb,#D59685 24%,#17181B)}
+.dark .calendar-event[data-color="11"],.dark .slot-mark.c11{--event-bg:color-mix(in srgb,#B1CC94 24%,#17181B)}
+.dark .calendar-event[data-color="12"],.dark .slot-mark.c12{--event-bg:color-mix(in srgb,#70C0CB 24%,#17181B)}
+.dark .calendar-event[data-color="13"],.dark .slot-mark.c13{--event-bg:color-mix(in srgb,#9BCCC6 24%,#17181B)}
+.dark .calendar-event[data-color="14"],.dark .slot-mark.c14{--event-bg:color-mix(in srgb,#9DB5DE 24%,#17181B)}
+.dark .calendar-event[data-color="15"],.dark .slot-mark.c15{--event-bg:color-mix(in srgb,#DFAB85 24%,#17181B)}
 
 .day-list{display:flex;flex-direction:column;gap:8px}
 .day-block h3{margin:16px 0 8px;font-size:13px;font-weight:600;color:var(--text-muted)}
@@ -149,8 +169,7 @@
 .slot[data-past=true] .slot-mark{opacity:.55}
 .slot-time{font-size:12px;font-variant-numeric:tabular-nums;line-height:1.35;color:var(--text-secondary)}
 .slot-time small{display:block;color:var(--text-muted)}
-.slot-mark{width:3px;height:32px;border-radius:2px;background:var(--border)}
-.slot-mark.c0,.slot-mark.c1,.slot-mark.c2,.slot-mark.c3,.slot-mark.c4,.slot-mark.c5{background:var(--event-accent)}
+.slot-mark{width:3px;height:32px;border-radius:2px;background:var(--event-accent,var(--border))}
 .slot-body{min-width:0}
 .slot-body strong{display:inline;font-size:13px;font-weight:600;color:var(--foreground)}
 .slot-note{margin-left:8px;font-size:12px;font-weight:500;color:var(--text-secondary)}

@@ -1,4 +1,6 @@
 .generated/
+.dev.vars
+.dev.vars.*
 src/generated-css.ts
 node_modules/
 dist/

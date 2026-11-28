@@ -1,4 +1,5 @@
 import { preferences, savePreferences, updatePrefs, updateCourse, courseKey, displayLesson, schoolContext, type SchoolDay } from "./school";
+import { paintCourseColors } from "./schedule";
 import { nowLine, lessonSheet, appearanceForm, termsForm, courseEditor } from "./daily-ui";
 import { ApiError, nowIso } from "./common";
 import { hashToken } from "./compat";
@@ -23,15 +24,17 @@ async function timetablePage(db:D1Database,url:URL,calendarId:string,user:User,t
  if(view==="day")until=from;else if(dayCount(from,until)>7)until=shiftDate(from,6);
  if(explicit==="agenda"||explicit==="biweek"){const next=new URL(url);next.searchParams.set("view",view);next.searchParams.set("from",from);next.searchParams.set("until",until);return redirect(next.pathname+next.search);}
  const span=dayCount(from,until),list=view==="day",mon=weekStart(from),last=shiftDate(mon,6);
- const [r,days,todayRows,cancelledRes,changeRes]=await Promise.all([
+ const [r,days,todayRows,cancelledRes,changeRes,catalogRes]=await Promise.all([
   eventsBetween(db,calendarId,from,until),
   db.prepare("SELECT local_date,week_label,term_label,holiday_label,checked_at FROM worker_school_days WHERE calendar_id=? AND local_date BETWEEN ? AND ? ORDER BY local_date").bind(calendarId,from<mon?from:mon,until>last?until:last).all<SchoolDay>(),
   own?eventsBetween(db,calendarId,today,shiftDate(today,7),301):Promise.resolve(null),
   list?db.prepare("SELECT "+scheduleColumns+" FROM events WHERE calendar_id=? AND status='cancelled' AND local_date BETWEEN ? AND ? ORDER BY local_date,starts_at_utc LIMIT 200").bind(calendarId,from,until).all<Record<string,unknown>>():Promise.resolve({results:[] as Record<string,unknown>[]}),
-  list?db.prepare("SELECT event_id,kind FROM worker_event_changes WHERE calendar_id=? ORDER BY changed_at DESC LIMIT 80").bind(calendarId).all<{event_id:string;kind:string}>():Promise.resolve({results:[] as {event_id:string;kind:string}[]})
+  list?db.prepare("SELECT event_id,kind FROM worker_event_changes WHERE calendar_id=? ORDER BY changed_at DESC LIMIT 80").bind(calendarId).all<{event_id:string;kind:string}>():Promise.resolve({results:[] as {event_id:string;kind:string}[]}),
+  db.prepare("SELECT course_code,min(title) AS title FROM events WHERE calendar_id=? GROUP BY COALESCE(NULLIF(course_code,''),title),course_code").bind(calendarId).all<Record<string,unknown>>()
  ]);
- const raw=r.results.slice(0,500),display=own?raw.map(x=>displayLesson(p,x)).filter(x=>!x.ui_hidden):raw;
- const cancelled=own?cancelledRes.results.map(x=>displayLesson(p,x)).filter(x=>!x.ui_hidden):cancelledRes.results;
+ const catalog=own?catalogRes.results.map(x=>displayLesson(p,x)):catalogRes.results;
+ const raw=r.results.slice(0,500),display=paintCourseColors(catalog,own?raw.map(x=>displayLesson(p,x)).filter(x=>!x.ui_hidden):raw);
+ const cancelled=paintCourseColors(catalog,own?cancelledRes.results.map(x=>displayLesson(p,x)).filter(x=>!x.ui_hidden):cancelledRes.results);
  const latest=new Map<string,string>();
  for(const c of changeRes.results)if(!latest.has(c.event_id))latest.set(c.event_id,c.kind);
  const changed=new Set<string>();
