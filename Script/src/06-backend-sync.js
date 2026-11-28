@@ -33,6 +33,10 @@
 
   /** @param {string} body @param {string} idempotencyKey @param {boolean} [allowEmptySnapshot] */
   async function postSyncPayload(body, idempotencyKey, allowEmptySnapshot = false, config = loadConfig()) {
+    return withTransientRetry(() => sendSyncPayload(body, idempotencyKey, allowEmptySnapshot, config), { attempts: 3 });
+  }
+
+  async function sendSyncPayload(body, idempotencyKey, allowEmptySnapshot = false, config = loadConfig()) {
     assertConfig(config);
     const token = config.deviceToken;
     if (!token) {
@@ -73,6 +77,7 @@
     const err = new Error(message);
     err.code = code;
     err.status = response.status;
+    err.headers = response.responseHeaders;
     err.response = parsed;
     if (code === 'SOURCE_IDENTITY_MISMATCH') {
       err.message =
@@ -122,6 +127,7 @@
       const err = new Error(message);
       err.code = code;
       err.status = response.status;
+      err.headers = response.responseHeaders;
       throw err;
     }
     if (!parsed || !parsed.feed || !Number.isInteger(parsed.feed.revision)) throw new Error('Unexpected device status response.');

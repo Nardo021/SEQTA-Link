@@ -112,7 +112,7 @@ function mountUi() {
     const modal = document.createElement("div");
     modal.className = "scs-modal";
     modal.innerHTML = `
-        <h2>Seqta Link</h2>
+        <h2>SEQTA Link</h2>
         <div class="scs-field">
           <label for="scs-backend">Backend URL</label>
           <input id="scs-backend" type="url" placeholder="https://timetable.yanze.me" />
@@ -140,7 +140,7 @@ function mountUi() {
         </div>
         <div class="scs-field">
           <label><input id="scs-auto" type="checkbox" /> Smart Auto Sync</label>
-          <small>Check every 15 minutes while SEQTA is visible and signed in. Only the selected profile; complete one manual sync first.</small>
+          <small>Check every 15 minutes while this SEQTA tab is visible and signed in, including when you return or the network recovers. One manual sync is required first. Closing the browser stops checks.</small>
         </div>
         <div class="scs-field">
           <label for="scs-student">Student ref override (optional)</label>
@@ -214,7 +214,9 @@ function mountUi() {
           STORAGE.studentRefOverride,
           studentInput?.value.trim() || "",
         );
-        setAutoEnabled(loadConfig(),!!autoInput?.checked);
+        const saved=loadConfig();
+        setAutoEnabled(saved,!!autoInput?.checked);
+        setSetting(autoKey(saved)+".blocked","");
         backdrop.remove();
         setStatus("Settings saved.", "success");
       });
@@ -276,6 +278,7 @@ function mountUi() {
       setSetting(STORAGE.backendUrl, backendUrl);
       try {
         const paired = await pairDevice(code, deviceName);
+        setSetting(autoKey(loadConfig())+".blocked","");
         backdrop.remove();
         setStatus(
           `Paired as ${paired.calendarLabel}. Get the Apple Calendar URL in Portal → Calendar.`,
@@ -311,7 +314,7 @@ function mountUi() {
 
     try {
       const outcome = await runSync(setStatus,{config,expectedStudentRef:studentRef});
-      if(outcome.skipped){setStatus(outcome.reason,"success");return;}
+      if(outcome.skipped){setStatus(outcome.reason,freshnessLine(readFresh(config)).kind);return;}
       const { result, stats, emptySnapshotConfirmed }=outcome;
       const r = result?.result || {};
       const changed = result?.changed ? " (calendar updated)" : "";
@@ -350,10 +353,7 @@ function mountUi() {
   });
 
   const config = loadConfig();
-  if (!config.deviceToken) {
-    setStatus("Click Pair device to connect this browser.");
-  } else {
-    setStatus(`Profile: ${config.calendarLabel}`);
-  }
+  const opening = config.deviceToken ? freshnessLine(readFresh(config)) : { text: "Click Pair device to connect this browser.", kind: "info" };
+  setStatus(opening.text, opening.kind);
   startAutoSync(setStatus);
 }

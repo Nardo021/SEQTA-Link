@@ -6,15 +6,18 @@ import {Label} from "./components/ui/label";
 import {Textarea} from "./components/ui/textarea";
 import {NativeSelect,NativeSelectOption} from "./components/ui/native-select";
 import {utcDate} from "./common";
+import {liveState,type LiveLesson,type LiveTrust,type LiveView} from "./live";
 import {courseColor,paintCourseColors,type LessonRow,todaySydney} from "./schedule";
 import {type Prefs,courseRule,courseKey,displayLesson,formatTerms,lessonTime} from "./school";
 const html=(n:React.ReactNode)=>renderToStaticMarkup(n);
-export function nowLine(rows:LessonRow[],p:Prefs,nowMs=Date.now()){
- const now=nowMs,today=todaySydney(new Date(now));
- const lessons=rows.map(r=>displayLesson(p,r)).filter(r=>!r.ui_hidden).map(r=>({title:String(r.title||"Lesson"),start:utcDate(String(r.starts_at_utc)).getTime(),end:utcDate(String(r.ends_at_utc)).getTime(),date:String(r.local_date),time:lessonTime(r.starts_at_utc,p.hour)+" – "+lessonTime(r.ends_at_utc,p.hour),room:String(r.room||"")})).filter(r=>Number.isFinite(r.start)&&r.end>r.start).sort((a,b)=>a.start-b.start);
- const current=lessons.filter(r=>r.start<=now&&now<r.end),next=lessons.find(r=>r.start>now),active=current[0],focus=active||next;
- if(!focus)return "";
- return html(<p className="now-line" data-live-day={JSON.stringify(lessons)}><span data-live-state="">{active?"Now":"Next"}</span><strong data-live-current="">{active?current.map(r=>r.title).join(" / "):focus.title}</strong><span data-live-meta="">{[focus.time,focus.room].filter(Boolean).join(" · ")}</span></p>);
+export function prepareLive(rows:LessonRow[],p:Prefs,facts:{covered:readonly string[];holiday:string|null;trust:LiveTrust;nowMs?:number}){
+ const now=facts.nowMs??Date.now(),today=todaySydney(new Date(now));
+ const lessons:LiveLesson[]=rows.map(r=>displayLesson(p,r)).filter(r=>!r.ui_hidden).map(r=>({title:String(r.title||"Lesson"),room:String(r.room||""),date:String(r.local_date||""),start:utcDate(String(r.starts_at_utc)).getTime(),end:utcDate(String(r.ends_at_utc)).getTime(),clock:lessonTime(r.starts_at_utc,p.hour),cancelled:String(r.status||"")==="cancelled"})).filter(r=>r.date&&Number.isFinite(r.start)&&r.end>r.start);
+ const view=liveState({now,today,lessons,covered:facts.covered,holiday:facts.holiday,trust:facts.trust});
+ return {view,payload:JSON.stringify({lessons,covered:[...facts.covered],holiday:facts.holiday,trust:facts.trust})};
+}
+export function nowLine(view:LiveView,payload:string){
+ return html(<div className="now-line" data-live-day={payload} data-stale={view.stale?"true":"false"}><span data-live-state="">{view.state}</span>{view.title&&<strong data-live-current="">{view.title}</strong>}<span data-live-meta="">{view.meta}</span><span data-live-next="" className="now-next" hidden={view.next?undefined:true}>{view.next}</span><span className="now-progress" data-live-progress="" hidden={view.progress==null?true:undefined}><span style={view.progress==null?undefined:{width:(view.progress*100)+"%"}}/></span>{view.note&&<span data-live-note="" className="now-note">{view.note}</span>}</div>);
 }
 export function lessonSheet(){
  const fields=[["date","Date"],["time","Time"],["room","Room"],["teacher","Teacher"],["course","Course"],["period","Period"],["notes","Notes"]] as const;

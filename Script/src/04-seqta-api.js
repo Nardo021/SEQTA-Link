@@ -11,7 +11,9 @@
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      throw new Error(`SEQTA request failed (${res.status}) for ${path}`);
+      const error = new Error(`SEQTA request failed (${res.status}) for ${path}`);
+      error.status = res.status;
+      throw error;
     }
     return res.json();
   }
