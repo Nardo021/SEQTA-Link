@@ -60,11 +60,6 @@
  small{color:var(--text-muted);font-size:12px}
  code{@apply block break-all select-all;border-radius:6px;background:var(--elevated);padding:12px;font-size:12px}
 }
-@media (prefers-reduced-motion:reduce){
- *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
- ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
-}
-
 .app-header{display:flex;align-items:stretch;height:60px;gap:8px;padding-inline:16px;border-bottom:1px solid var(--border);background:var(--background);position:sticky;top:0;z-index:20}
 .brand{display:flex;align-items:center;font-weight:600;letter-spacing:-.02em;color:var(--foreground)}
 .header-actions{margin-left:auto;display:flex;align-items:center;gap:4px}
@@ -286,8 +281,7 @@ html[data-interactive-ready=yes] #lesson-sheet{display:none}
 ::view-transition-group(root),::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
 ::view-transition-group(nav-indicator){animation-duration:var(--motion-normal);animation-timing-function:var(--ease-standard)}
 
-@media (prefers-reduced-motion:no-preference){
- html[data-motion="enter"] .page-body:not(:has(.calendar-scroll)),html[data-motion="enter"] body>.grid>main{animation:motion-enter var(--motion-normal) var(--ease-standard) both}
+html[data-motion="enter"] .page-body:not(:has(.calendar-scroll)),html[data-motion="enter"] body>.grid>main{animation:motion-enter var(--motion-normal) var(--ease-standard) both}
  html[data-motion="enter"] .page-body:has(.calendar-scroll) .schedule-head{animation:motion-enter var(--motion-normal) var(--ease-standard) both}
  html[data-motion="view"] .page-body{animation:motion-fade var(--motion-view) var(--ease-standard) both}
  html[data-motion="forward"] .page-body{animation:motion-forward var(--motion-fast) var(--ease-standard) both}
@@ -310,8 +304,7 @@ html[data-interactive-ready=yes] #lesson-sheet{display:none}
  .settings-nav .nav-indicator{transition:transform var(--motion-normal) var(--ease-standard),width var(--motion-normal) var(--ease-standard),height var(--motion-normal) var(--ease-standard)}
  .settings-nav a,.topnav a,.subnav>a{transition:color var(--motion-fast) var(--ease-standard),background-color var(--motion-fast) var(--ease-standard)}
  html.theme-ready body,html.theme-ready .app-header,html.theme-ready .calendar-scroll,html.theme-ready .settings-panel,html.theme-ready .lesson-sheet,html.theme-ready .metric-card{transition:background-color var(--motion-normal) var(--ease-standard),color var(--motion-normal) var(--ease-standard),border-color var(--motion-normal) var(--ease-standard)}
- html[data-sync-state=running] .sync-icon{animation:sync-spin var(--motion-slow) linear infinite}
-}
+html[data-sync-state=running] .sync-icon{animation:sync-spin var(--motion-slow) linear infinite}
 @keyframes motion-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes motion-fade{from{opacity:0}to{opacity:1}}
 @keyframes motion-forward{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:none}}
@@ -321,7 +314,6 @@ html[data-interactive-ready=yes] #lesson-sheet{display:none}
 @keyframes pop-enter{from{opacity:0;translate:0 -4px}to{opacity:1;translate:0 0}}
 @keyframes pop-exit{from{opacity:1;translate:0 0}to{opacity:0;translate:0 -4px}}
 @keyframes sync-spin{to{rotate:1turn}}
-@media (prefers-reduced-motion:reduce){@view-transition{navigation:none}}
 
 @media print{
  .no-print{display:none!important}

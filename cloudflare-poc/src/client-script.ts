@@ -27,7 +27,7 @@ function live(){
 function locateCurrent(auto){
  var grid=Array.from(document.querySelectorAll(".calendar-scroll")).find(function(g){return g.querySelector("[data-today=true]");})||document.querySelector(".calendar-scroll");if(!grid||auto&&grid.dataset.autolocate!=="yes")return;
  var target=grid.querySelector("[data-current=true]")||grid.querySelector("[data-today=true] .calendar-now:not([hidden])")||grid.querySelector("[data-today=true]");
- if(target)target.scrollIntoView({block:"nearest",inline:"center",behavior:auto||matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
+ if(target)target.scrollIntoView({block:"nearest",inline:"center",behavior:auto?"auto":"smooth"});
 }
 function now(){live();
  var f=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
