@@ -1,6 +1,8 @@
 export const clientScript=`(function(){
 "use strict";
-var key="seqta-ui-theme",media=matchMedia("(prefers-color-scheme: dark)"),mode="system";
+var key="seqta-ui-theme",motionKey="seqta-motion",media=matchMedia("(prefers-color-scheme: dark)"),mode="system",motion="enter";
+try{var stored=sessionStorage.getItem(motionKey);if(stored==="back"||stored==="forward"||stored==="view")motion=stored;sessionStorage.removeItem(motionKey);}catch(_){}
+document.documentElement.setAttribute("data-motion",motion);
 try{var saved=localStorage.getItem(key);if(["light","dark","system"].includes(saved))mode=saved;}catch(_){}
 function apply(){
  document.documentElement.classList.toggle("dark",mode==="dark"||(mode==="system"&&media.matches));
@@ -39,13 +41,23 @@ function now(){live();
   if(!line.hidden){line.style.top=((m-start)*scale)+"px";line.setAttribute("aria-label","Current time "+p.hour+":"+p.minute);}
  });
 }
-function settingsSection(){var shell=document.querySelector(".settings-shell");if(!(shell instanceof HTMLElement))return;var hash=location.hash.slice(1),current=document.getElementById(hash)?hash:(shell.getAttribute("data-section")||"");shell.querySelectorAll(".settings-nav a").forEach(function(a){if(a.getAttribute("data-settings-link")===current)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});}
-document.addEventListener("DOMContentLoaded",function(){apply();now();settingsSection();if(document.querySelector("[data-calendar-date],[data-live-day]"))setInterval(now,1000);locateCurrent(true);});
-window.addEventListener("hashchange",settingsSection);
+function placeIndicator(nav,animate){var mark=nav.querySelector(".nav-indicator");if(!mark){mark=document.createElement("span");mark.className="nav-indicator";mark.setAttribute("aria-hidden","true");nav.appendChild(mark);}var link=nav.querySelector("[aria-current=page]");if(!(link instanceof HTMLElement)||!(mark instanceof HTMLElement))return;var navBox=nav.getBoundingClientRect(),box=link.getBoundingClientRect();if(!animate)mark.style.transition="none";mark.style.width=box.width+"px";mark.style.height=box.height+"px";mark.style.transform="translate("+(box.left-navBox.left+nav.scrollLeft)+"px,"+(box.top-navBox.top+nav.scrollTop)+"px)";if(!animate){mark.getBoundingClientRect();mark.style.transition="";}}
+function settingsSection(animate){var shell=document.querySelector(".settings-shell");if(!(shell instanceof HTMLElement))return;var hash=location.hash.slice(1),current=document.getElementById(hash)?hash:(shell.getAttribute("data-section")||"");shell.querySelectorAll(".settings-nav a").forEach(function(a){if(a.getAttribute("data-settings-link")===current)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});var nav=shell.querySelector(".settings-nav");if(nav instanceof HTMLElement)placeIndicator(nav,animate);shell.querySelectorAll(".settings-section").forEach(function(el){el.classList.remove("is-entering");});var shown=document.getElementById(current);if(animate&&shown)shown.classList.add("is-entering");}
+document.addEventListener("DOMContentLoaded",function(){apply();now();settingsSection(false);requestAnimationFrame(function(){requestAnimationFrame(function(){document.documentElement.classList.add("theme-ready");});});if(document.querySelector("[data-calendar-date],[data-live-day]"))setInterval(now,1000);locateCurrent(true);});
+window.addEventListener("hashchange",function(){settingsSection(true);});
 document.addEventListener("visibilitychange",function(){if(!document.hidden)now();});
 document.addEventListener("submit",function(event){var f=event.target;if(f instanceof HTMLFormElement&&f.dataset.confirm&&f.dataset.confirmApproved!=="yes"&&document.documentElement.dataset.interactiveReady!=="yes"&&!window.confirm(f.dataset.confirm))event.preventDefault();});
 document.addEventListener("click",async function(event){
  var target=event.target instanceof Element?event.target:null;if(!target)return;
+ var anchor=target.closest("a[href]");
+ if(anchor instanceof HTMLAnchorElement&&event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey&&!anchor.closest(".settings-nav")){
+  var kind="",label=anchor.getAttribute("aria-label")||"";
+  if(label.indexOf("Previous")===0)kind="back";
+  else if(label.indexOf("Next")===0)kind="forward";
+  else if(anchor.closest("[aria-label='Timetable views']")||anchor.closest(".calendar-day-head"))kind="view";
+  else if(anchor.closest(".schedule-toolbar")&&(anchor.textContent||"").trim()==="Today"){try{var nextFrom=new URL(anchor.href).searchParams.get("from")||"",currentFrom=new URL(location.href).searchParams.get("from")||"";kind=nextFrom&&currentFrom&&nextFrom!==currentFrom?(nextFrom<currentFrom?"back":"forward"):"view";}catch(_){kind="view";}}
+  if(kind){try{sessionStorage.setItem(motionKey,kind);}catch(_){}}
+ }
  if(target.closest("[data-theme-toggle]")){mode=mode==="system"?"light":mode==="light"?"dark":"system";try{localStorage.setItem(key,mode);}catch(_){}apply();return;}
  if(target.closest("[data-locate-current]")){locateCurrent(false);return;}
  var reveal=target.closest("[data-reveal-url]");

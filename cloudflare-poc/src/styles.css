@@ -30,6 +30,9 @@
  --accent:var(--hover);--accent-foreground:var(--foreground);
  --destructive:var(--danger-fill);--input:var(--border);--ring:var(--accent-primary);
  --radius:10px;
+ --motion-instant:80ms;--motion-fast:120ms;--motion-normal:180ms;--motion-slow:240ms;
+ --motion-view:160ms;--motion-section:150ms;
+ --ease-standard:cubic-bezier(0.2, 0.8, 0.2, 1);--ease-exit:cubic-bezier(0.4, 0, 1, 1);
 }
 .dark {
  color-scheme:dark;
@@ -57,17 +60,18 @@
  small{color:var(--text-muted);font-size:12px}
  code{@apply block break-all select-all;border-radius:6px;background:var(--elevated);padding:12px;font-size:12px}
 }
-@media (prefers-reduced-motion:no-preference){
- a,button,input,select,textarea,summary{transition-property:background-color,color,border-color,box-shadow;transition-duration:140ms;transition-timing-function:ease}
+@media (prefers-reduced-motion:reduce){
+ *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+ ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
 }
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 .app-header{display:flex;align-items:stretch;height:60px;gap:8px;padding-inline:16px;border-bottom:1px solid var(--border);background:var(--background);position:sticky;top:0;z-index:20}
 .brand{display:flex;align-items:center;font-weight:600;letter-spacing:-.02em;color:var(--foreground)}
 .header-actions{margin-left:auto;display:flex;align-items:center;gap:4px}
 .topnav{display:flex;align-items:stretch;gap:2px}
-.topnav a{display:inline-flex;align-items:center;min-height:36px;padding:0 12px;color:var(--text-secondary);font-size:14px;font-weight:500}
-.topnav a[aria-current=page]{color:var(--foreground);box-shadow:inset 0 -2px 0 var(--accent-primary)}
+.topnav a{position:relative;display:inline-flex;align-items:center;min-height:36px;padding:0 12px;color:var(--text-secondary);font-size:14px;font-weight:500}
+.topnav a[aria-current=page]{color:var(--foreground)}
+.topnav a[aria-current=page]::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;background:var(--accent-primary);view-transition-name:nav-indicator}
 .app-main{width:min(calc(100% - 32px),1120px);margin-inline:auto;padding-block:16px 32px}
 .page-title{margin:0 0 20px;font-size:28px;font-weight:600;line-height:1.15;letter-spacing:-.02em}
 .page-body{min-width:0}
@@ -183,9 +187,10 @@
 }
 
 .settings-shell{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
-.settings-nav{display:flex;gap:4px;overflow-x:auto}
-.settings-nav a{display:inline-flex;align-items:center;min-height:36px;padding:0 12px;border-radius:6px;color:var(--text-secondary);font-size:14px;font-weight:500;white-space:nowrap}
-.settings-nav a[aria-current=page]{background-color:var(--hover);color:var(--foreground)}
+.settings-nav{position:relative;display:flex;gap:4px;overflow-x:auto}
+.settings-nav a{position:relative;z-index:1;display:inline-flex;align-items:center;min-height:36px;padding:0 12px;border-radius:6px;color:var(--text-secondary);font-size:14px;font-weight:500;white-space:nowrap}
+.settings-nav a[aria-current=page]{color:var(--foreground)}
+.settings-nav .nav-indicator{position:absolute;left:0;top:0;z-index:0;border-radius:6px;background:var(--hover);pointer-events:none}
 .settings-shell:has(#appearance:target) .settings-nav a[aria-current=page],
 .settings-shell:has(#calendar:target) .settings-nav a[aria-current=page],
 .settings-shell:has(#account:target) .settings-nav a[aria-current=page],
@@ -194,6 +199,7 @@
 .settings-shell:has(#calendar:target) .settings-nav a[data-settings-link=calendar],
 .settings-shell:has(#account:target) .settings-nav a[data-settings-link=account],
 .settings-shell:has(#advanced:target) .settings-nav a[data-settings-link=advanced]{background-color:var(--hover);color:var(--foreground)}
+.settings-nav:has(.nav-indicator) a[data-settings-link]{background-color:transparent}
 .settings-panel{border:1px solid var(--border);border-radius:10px;background:var(--surface);padding:16px}
 .settings-panel>section{display:none}
 .settings-shell[data-section="appearance"]>.settings-panel>#appearance,
@@ -249,8 +255,9 @@
 }
 
 .subnav{display:flex;flex-wrap:wrap;gap:0;margin:0 0 24px;border-bottom:1px solid var(--border)}
-.subnav>a{display:inline-flex;align-items:center;min-height:40px;padding:0 12px;border-bottom:2px solid transparent;color:var(--text-secondary);font-size:14px;font-weight:500}
-.subnav>a[aria-current=page]{color:var(--foreground);border-bottom-color:var(--accent-primary)}
+.subnav>a{position:relative;display:inline-flex;align-items:center;min-height:40px;padding:0 12px;border-bottom:2px solid transparent;color:var(--text-secondary);font-size:14px;font-weight:500}
+.subnav>a[aria-current=page]{color:var(--foreground)}
+.subnav>a[aria-current=page]::after{content:"";position:absolute;left:12px;right:12px;bottom:-2px;height:2px;background:var(--accent-primary);view-transition-name:nav-indicator}
 .metric-card{min-height:112px;border-radius:10px;background:var(--surface)}
 .metric-value{margin:0;font-size:30px;font-weight:600;line-height:1.1;letter-spacing:-.02em;color:var(--foreground);font-variant-numeric:tabular-nums}
 [data-slot=table-head]{height:40px;font-size:12px;font-weight:500;color:var(--text-muted)}
@@ -275,6 +282,47 @@ html[data-interactive-ready=yes] #lesson-sheet{display:none}
 [data-slot=calendar] .rdp-week{gap:0}
 [data-slot=table-container]{max-width:100%;overflow-x:auto}
 @media (max-width:767px){[data-slot=dialog-content]{max-height:80dvh;max-width:calc(100vw - 32px)}}
+@view-transition{navigation:auto}
+::view-transition-group(root),::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+::view-transition-group(nav-indicator){animation-duration:var(--motion-normal);animation-timing-function:var(--ease-standard)}
+
+@media (prefers-reduced-motion:no-preference){
+ html[data-motion="enter"] .page-body:not(:has(.calendar-scroll)),html[data-motion="enter"] body>.grid>main{animation:motion-enter var(--motion-normal) var(--ease-standard) both}
+ html[data-motion="enter"] .page-body:has(.calendar-scroll) .schedule-head{animation:motion-enter var(--motion-normal) var(--ease-standard) both}
+ html[data-motion="view"] .page-body{animation:motion-fade var(--motion-view) var(--ease-standard) both}
+ html[data-motion="forward"] .page-body{animation:motion-forward var(--motion-fast) var(--ease-standard) both}
+ html[data-motion="back"] .page-body{animation:motion-back var(--motion-fast) var(--ease-standard) both}
+ .settings-section.is-entering{animation:motion-fade var(--motion-section) var(--ease-standard) both}
+ .calendar-event{transition:background-color var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard)}
+ .calendar-event:hover{background:color-mix(in srgb,var(--event-bg) 82%,var(--foreground));border-left-color:color-mix(in srgb,var(--event-accent) 72%,var(--foreground))}
+ .lesson-sheet[open]{opacity:1;scale:1;transition:opacity var(--motion-normal) var(--ease-standard),scale var(--motion-normal) var(--ease-standard),overlay var(--motion-normal) var(--ease-standard) allow-discrete,display var(--motion-normal) var(--ease-standard) allow-discrete}
+ @starting-style{.lesson-sheet[open]{opacity:0;scale:.97}}
+ [data-slot=dialog-overlay][data-state=open],[data-slot=alert-dialog-overlay][data-state=open]{animation:motion-fade var(--motion-normal) var(--ease-standard)}
+ [data-slot=dialog-overlay][data-state=closed],[data-slot=alert-dialog-overlay][data-state=closed]{animation:motion-fade var(--motion-fast) var(--ease-exit) reverse}
+ [data-slot=dialog-content][data-state=open],[data-slot=alert-dialog-content][data-state=open]{animation:dialog-enter var(--motion-normal) var(--ease-standard)}
+ [data-slot=dialog-content][data-state=closed],[data-slot=alert-dialog-content][data-state=closed]{animation:dialog-exit var(--motion-fast) var(--ease-exit)}
+ [data-slot=popover-content][data-state=open],[data-slot=dropdown-menu-content][data-state=open],[data-slot=dropdown-menu-sub-content][data-state=open]{animation:pop-enter var(--motion-fast) var(--ease-standard)}
+ [data-slot=popover-content][data-state=closed],[data-slot=dropdown-menu-content][data-state=closed],[data-slot=dropdown-menu-sub-content][data-state=closed]{animation:pop-exit var(--motion-instant) var(--ease-exit)}
+ [data-slot=button]{transition-property:background-color,color,border-color,box-shadow,scale;transition-duration:var(--motion-fast);transition-timing-function:var(--ease-standard)}
+ [data-slot=button]:active:not(:disabled){scale:.98}
+ [data-slot=switch]{transition-property:background-color,border-color;transition-duration:var(--motion-fast);transition-timing-function:var(--ease-standard)}
+ [data-slot=switch-thumb]{transition-property:transform,background-color;transition-duration:var(--motion-fast);transition-timing-function:var(--ease-standard)}
+ .settings-nav .nav-indicator{transition:transform var(--motion-normal) var(--ease-standard),width var(--motion-normal) var(--ease-standard),height var(--motion-normal) var(--ease-standard)}
+ .settings-nav a,.topnav a,.subnav>a{transition:color var(--motion-fast) var(--ease-standard),background-color var(--motion-fast) var(--ease-standard)}
+ html.theme-ready body,html.theme-ready .app-header,html.theme-ready .calendar-scroll,html.theme-ready .settings-panel,html.theme-ready .lesson-sheet,html.theme-ready .metric-card{transition:background-color var(--motion-normal) var(--ease-standard),color var(--motion-normal) var(--ease-standard),border-color var(--motion-normal) var(--ease-standard)}
+ html[data-sync-state=running] .sync-icon{animation:sync-spin var(--motion-slow) linear infinite}
+}
+@keyframes motion-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes motion-fade{from{opacity:0}to{opacity:1}}
+@keyframes motion-forward{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:none}}
+@keyframes motion-back{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+@keyframes dialog-enter{from{opacity:0;scale:.97}to{opacity:1;scale:1}}
+@keyframes dialog-exit{from{opacity:1;scale:1}to{opacity:0;scale:.97}}
+@keyframes pop-enter{from{opacity:0;translate:0 -4px}to{opacity:1;translate:0 0}}
+@keyframes pop-exit{from{opacity:1;translate:0 0}to{opacity:0;translate:0 -4px}}
+@keyframes sync-spin{to{rotate:1turn}}
+@media (prefers-reduced-motion:reduce){@view-transition{navigation:none}}
+
 @media print{
  .no-print{display:none!important}
  .app-main:has([data-layout="week"]){height:auto;overflow:visible}
